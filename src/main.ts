@@ -1,6 +1,7 @@
 import { TimeController, type SpeedMultiplier } from './core/time.ts'
 import {
   applyKeyCityOwners,
+  computeGridNeighbors,
   drawMapPreview,
   generateMap,
   getInitialOwners,
@@ -13,21 +14,22 @@ import {
   loadGame,
   saveGame,
 } from './core/save.ts'
-import type { GameSave, GeneratedMap } from './types/index.ts'
+import { DebugLogger, type LogCategory } from './ui/debug.ts'
+import type { GameSave, GeneratedMap, MapTile } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
+
+const logger = new DebugLogger({ container: logEl })
 
 let map: GeneratedMap | null = null
 let save: GameSave | null = null
 let time: TimeController | null = null
 let selectedTileId: string | undefined
 
-function log(message: string): void {
-  const line = `[${new Date().toLocaleTimeString()}] ${message}`
-  logEl.textContent = `${line}\n${logEl.textContent}`.slice(0, 8000)
-  console.log(message)
+function log(category: LogCategory, message: string): void {
+  logger.log(category, message)
 }
 
 function updateStatus(): void {
@@ -36,25 +38,71 @@ function updateStatus(): void {
   statusEl.textContent = `第 ${save.date} 天 · ${paused} · 速度 ×${time.getSpeed()}`
 }
 
+function getNeighborTiles(tile: MapTile): MapTile[] {
+  if (!map) return []
+  return computeGridNeighbors(map, tile)
+}
+
+function formatTileBrief(tile: MapTile): string {
+  return `${tile.name}(${tile.gridX},${tile.gridY})`
+}
+
 function renderMap(): void {
   if (!map || !save || !canvas) return
   const owners: Record<string, string> = {}
   for (const [id, tile] of Object.entries(save.tiles)) {
     owners[id] = tile.owner
   }
-  drawMapPreview(canvas, map, owners, selectedTileId)
+  const neighborIds = selectedTileId
+    ? map.tileById[selectedTileId]
+      ? getNeighborTiles(map.tileById[selectedTileId]).map((t) => t.id)
+      : []
+    : undefined
+  drawMapPreview(canvas, map, owners, selectedTileId, neighborIds)
+}
+
+function dumpGameState(): void {
+  if (!map || !save) return
+
+  const lines: string[] = [
+    `游戏日: ${save.date}`,
+    `地图: ${map.gridSize}×${map.gridSize} = ${map.tiles.length} 地块`,
+    `规则: 格 = 地块，邻接 = 上下左右四向（最多 4 格）`,
+  ]
+
+  if (selectedTileId && map.tileById[selectedTileId]) {
+    const tile = map.tileById[selectedTileId]
+    const neighbors = getNeighborTiles(tile)
+    const owner = save.tiles[tile.id]?.owner ?? 'neutral'
+    lines.push(
+      `选中: ${tile.name} id=${tile.id} 格坐标=(${tile.gridX},${tile.gridY})`,
+      `地形=${tile.type} 归属=${owner} 关键城=${tile.isKeyCity}`,
+      `邻接 ${neighbors.length} 格: ${neighbors.map(formatTileBrief).join('、') || '无'}`,
+    )
+  } else {
+    lines.push('选中: 无（点击地图选地块）')
+  }
+
+  for (const [fid, faction] of Object.entries(save.factions)) {
+    lines.push(`势力 ${fid}: 粮=${faction.food} 军=${faction.armies.length} 策=${faction.policies.length}`)
+  }
+
+  logger.dump('游戏状态快照', lines)
 }
 
 async function bootstrap(): Promise<void> {
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  log(`地图生成完成：${map.tiles.length} 地块，关键城 ${terrainConfig.keyTiles.length} 座`)
+  log(
+    'map',
+    `地图生成：${map.tiles.length} 地块，关键城 ${terrainConfig.keyTiles.length} 座，邻接按网格四向计算`,
+  )
 
   const existing = await loadGame()
   if (existing) {
     save = existing
-    log(`读档成功：第 ${save.date} 天`)
+    log('system', `读档成功：第 ${save.date} 天`)
   } else {
     const owners = getInitialOwners(map)
     applyKeyCityOwners(terrainConfig, owners)
@@ -66,7 +114,7 @@ async function bootstrap(): Promise<void> {
     }
     save = createNewGame(owners, heroIdsByFaction)
     await saveGame(save)
-    log('无存档，已创建新游戏并写入 IndexedDB')
+    log('system', '无存档，已创建新游戏并写入 IndexedDB')
   }
 
   time = new TimeController({
@@ -74,13 +122,13 @@ async function bootstrap(): Promise<void> {
       if (!save) return
       save.date = day
       if (day % 5 === 0) {
-        log(`gameTick → 第 ${day} 天`)
+        log('tick', `gameTick → 第 ${day} 天`)
       }
       updateStatus()
       renderMap()
     },
     onPauseChange: (paused) => {
-      log(paused ? '游戏暂停' : '游戏继续')
+      log('system', paused ? '游戏暂停' : '游戏继续')
       updateStatus()
     },
   })
@@ -90,7 +138,7 @@ async function bootstrap(): Promise<void> {
   bindUi()
   updateStatus()
   renderMap()
-  log('Sprint 0 就绪。空格暂停，点击地图选地块。')
+  log('system', '就绪。空格暂停；点击地块见邻接（绿框=邻接格）')
 }
 
 function bindUi(): void {
@@ -98,6 +146,8 @@ function bindUi(): void {
   const saveBtn = document.querySelector<HTMLButtonElement>('#btn-save')!
   const loadBtn = document.querySelector<HTMLButtonElement>('#btn-load')!
   const newBtn = document.querySelector<HTMLButtonElement>('#btn-new')!
+  const clearBtn = document.querySelector<HTMLButtonElement>('#btn-log-clear')!
+  const dumpBtn = document.querySelector<HTMLButtonElement>('#btn-log-dump')!
 
   pauseBtn.addEventListener('click', () => time?.togglePause())
 
@@ -107,27 +157,42 @@ function bindUi(): void {
       time?.setSpeed(speed)
       document.querySelectorAll('[data-speed]').forEach((b) => b.classList.remove('active'))
       btn.classList.add('active')
-      log(`速度切换为 ×${speed}`)
+      log('system', `速度切换为 ×${speed}`)
       updateStatus()
     })
   })
   document.querySelector<HTMLButtonElement>('[data-speed="1"]')?.classList.add('active')
 
+  clearBtn.addEventListener('click', () => {
+    logger.clear()
+  })
+
+  dumpBtn.addEventListener('click', () => dumpGameState())
+
+  document.querySelectorAll<HTMLButtonElement>('[data-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.filter as LogCategory | 'all'
+      logger.setFilter(filter)
+      document.querySelectorAll('[data-filter]').forEach((b) => b.classList.remove('active'))
+      btn.classList.add('active')
+    })
+  })
+
   saveBtn.addEventListener('click', async () => {
     if (!save) return
     await saveGame(save)
-    log(`手动存档：第 ${save.date} 天`)
+    log('system', `手动存档：第 ${save.date} 天`)
   })
 
   loadBtn.addEventListener('click', async () => {
     const loaded = await loadGame()
     if (!loaded) {
-      log('读档失败：本地无存档')
+      log('system', '读档失败：本地无存档')
       return
     }
     save = loaded
     time?.setGameDay(save.date)
-    log(`读档：第 ${save.date} 天`)
+    log('system', `读档：第 ${save.date} 天`)
     updateStatus()
     renderMap()
   })
@@ -148,7 +213,8 @@ function bindUi(): void {
     save = createNewGame(owners, heroIdsByFaction)
     await saveGame(save)
     time?.setGameDay(0)
-    log('新游戏已开始')
+    selectedTileId = undefined
+    log('system', '新游戏已开始')
     updateStatus()
     renderMap()
   })
@@ -159,7 +225,15 @@ function bindUi(): void {
     if (!tile) return
     selectedTileId = tile.id
     const owner = save?.tiles[tile.id]?.owner ?? 'neutral'
-    log(`选中：${tile.name}（${tile.type}）归属 ${owner}，邻接 ${tile.neighbors.length} 格`)
+    const neighbors = getNeighborTiles(tile)
+    log(
+      'tile',
+      `选中 ${tile.name} 格(${tile.gridX},${tile.gridY}) ${tile.type} 归属${owner}`,
+    )
+    log(
+      'tile',
+      `邻接 ${neighbors.length} 格: ${neighbors.map(formatTileBrief).join('、')}`,
+    )
     renderMap()
   })
 
@@ -178,6 +252,6 @@ function bindUi(): void {
 }
 
 bootstrap().catch((err) => {
-  log(`启动失败：${err instanceof Error ? err.message : String(err)}`)
+  log('system', `启动失败：${err instanceof Error ? err.message : String(err)}`)
   statusEl.textContent = '启动失败，见日志'
 })

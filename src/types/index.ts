@@ -8,7 +8,6 @@ export interface TerrainTileConfig {
   x: number
   y: number
   owner: FactionId
-  neighbors: string[]
 }
 
 export interface TerrainConfig {

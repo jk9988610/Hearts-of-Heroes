@@ -33,6 +33,8 @@
         font-family: inherit;
       }
       button.active { background: #c9b896; font-weight: bold; }
+      .toolbar-label { font-size: 0.85rem; color: #5c4f3a; margin-right: 0.25rem; }
+      .debug-toolbar { margin-bottom: 0.5rem; }
       #status { font-size: 0.9rem; margin-bottom: 0.5rem; }
       #log {
         background: #1e1e1e;
@@ -66,6 +68,17 @@
         <button id="btn-save" type="button">手动存档</button>
         <button id="btn-load" type="button">读档</button>
         <button id="btn-new" type="button">新游戏</button>
+      </div>
+      <div class="toolbar debug-toolbar">
+        <span class="toolbar-label">调试</span>
+        <button id="btn-log-clear" type="button">清空日志</button>
+        <button id="btn-log-dump" type="button">打印详情</button>
+        <span class="toolbar-label">筛选</span>
+        <button id="btn-filter-all" type="button" data-filter="all" class="active">全部</button>
+        <button id="btn-filter-tick" type="button" data-filter="tick">Tick</button>
+        <button id="btn-filter-tile" type="button" data-filter="tile">地块</button>
+        <button id="btn-filter-system" type="button" data-filter="system">系统</button>
+        <button id="btn-filter-debug" type="button" data-filter="debug">详情</button>
       </div>
       <div id="log"></div>
       <canvas id="map" width="600" height="600"></canvas>

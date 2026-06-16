@@ -13,22 +13,28 @@ const TERRAIN_NAMES: Record<TerrainType, string> = {
   river: '河畔',
 }
 
-function gridNeighbors(gridX: number, gridY: number, gridSize: number): string[] {
-  const ids: string[] = []
-  const deltas = [
+function gridIndex(gridSize: number, gx: number, gy: number): number {
+  return gy * gridSize + gx
+}
+
+/** 四向网格邻接：格 = 地块，上下左右各一格（最多 4 个） */
+export function computeGridNeighbors(map: GeneratedMap, tile: MapTile): MapTile[] {
+  const deltas: [number, number][] = [
     [0, -1],
     [1, 0],
     [0, 1],
     [-1, 0],
   ]
+  const neighbors: MapTile[] = []
   for (const [dx, dy] of deltas) {
-    const nx = gridX + dx
-    const ny = gridY + dy
-    if (nx >= 0 && nx < gridSize && ny >= 0 && ny < gridSize) {
-      ids.push(`tile_${nx}_${ny}`)
-    }
+    const nx = tile.gridX + dx
+    const ny = tile.gridY + dy
+    if (nx < 0 || nx >= map.gridSize || ny < 0 || ny >= map.gridSize) continue
+    const idx = gridIndex(map.gridSize, nx, ny)
+    const neighbor = map.tiles[idx]
+    if (neighbor) neighbors.push(neighbor)
   }
-  return ids
+  return neighbors
 }
 
 function seededType(seed: number): TerrainType {
@@ -75,23 +81,9 @@ export function generateMap(config: TerrainConfig): GeneratedMap {
   }
 
   for (const tile of tiles) {
-    const gridNeighborsIds = gridNeighbors(tile.gridX, tile.gridY, gridSize)
-    const neighborSet = new Set<string>()
-
-    for (const nid of gridNeighborsIds) {
-      neighborSet.add(nid)
-    }
-
-    if (tile.isKeyCity) {
-      const keyConfig = keyTiles.find((k) => k.id === tile.id)
-      if (keyConfig) {
-        for (const nid of keyConfig.neighbors) {
-          if (tileById[nid]) neighborSet.add(nid)
-        }
-      }
-    }
-
-    tile.neighbors = [...neighborSet].filter((nid) => tileById[nid])
+    tile.neighbors = computeGridNeighbors({ gridSize, tiles, tileById }, tile).map(
+      (t) => t.id,
+    )
   }
 
   return { gridSize, tiles, tileById }
@@ -132,6 +124,7 @@ export function drawMapPreview(
   map: GeneratedMap,
   owners: Record<string, string>,
   highlightId?: string,
+  neighborIds?: string[],
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -146,6 +139,7 @@ export function drawMapPreview(
     const px = offsetX + tile.gridX * cell
     const py = offsetY + tile.gridY * cell
     const owner = owners[tile.id] ?? 'neutral'
+    const isNeighbor = neighborIds?.includes(tile.id)
 
     ctx.fillStyle = TERRAIN_COLORS[tile.type]
     ctx.fillRect(px, py, cell, cell)
@@ -154,6 +148,12 @@ export function drawMapPreview(
     ctx.globalAlpha = 0.45
     ctx.fillRect(px, py, cell, cell)
     ctx.globalAlpha = 1
+
+    if (isNeighbor) {
+      ctx.strokeStyle = '#2d6a4f'
+      ctx.lineWidth = 3
+      ctx.strokeRect(px + 2, py + 2, cell - 4, cell - 4)
+    }
 
     if (tile.id === highlightId) {
       ctx.strokeStyle = '#ffd700'

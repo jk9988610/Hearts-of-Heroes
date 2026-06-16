@@ -9,15 +9,35 @@ export const LOG_CATEGORIES: LogCategory[] = [
   'battle',
 ]
 
+export const LOG_CATEGORY_LABELS: Record<LogCategory, string> = {
+  tick: 'Tick',
+  tile: '地块',
+  system: '系统',
+  map: '地图',
+  debug: '详情',
+  battle: '战斗',
+}
+
+export interface LogEntry {
+  time: string
+  category: LogCategory
+  message: string
+}
+
 export interface DebugLoggerOptions {
   container: HTMLElement
   maxLines?: number
 }
 
+export function formatLogLine(entry: LogEntry): string {
+  const label = LOG_CATEGORY_LABELS[entry.category]
+  return `[${entry.time}] [${label}] ${entry.message}`
+}
+
 export class DebugLogger {
   private readonly container: HTMLElement
   private readonly maxLines: number
-  private entries: { time: string; category: LogCategory; message: string }[] = []
+  private entries: LogEntry[] = []
   private enabledCategories = new Set<LogCategory>(LOG_CATEGORIES)
 
   constructor(options: DebugLoggerOptions) {
@@ -40,13 +60,25 @@ export class DebugLogger {
   }
 
   log(category: LogCategory, message: string): void {
-    const time = new Date().toLocaleTimeString()
-    this.entries.unshift({ time, category, message })
+    const entry: LogEntry = {
+      time: new Date().toLocaleTimeString(),
+      category,
+      message,
+    }
+    this.entries.unshift(entry)
     if (this.entries.length > this.maxLines) {
       this.entries.length = this.maxLines
     }
-    console.log(`[${category}] ${message}`)
+    console.log(formatLogLine(entry))
     this.render()
+  }
+
+  /** 结构化报告：统一标题 + 缩进条目 */
+  report(category: LogCategory, title: string, lines: string[]): void {
+    this.log(category, `── ${title} ──`)
+    for (const line of lines) {
+      this.log(category, `  ${line}`)
+    }
   }
 
   clear(): void {
@@ -54,17 +86,42 @@ export class DebugLogger {
     this.render()
   }
 
-  dump(title: string, lines: string[]): void {
-    this.log('debug', `── ${title} ──`)
-    for (const line of lines) {
-      this.log('debug', line)
-    }
+  getFilteredEntries(): LogEntry[] {
+    return this.entries.filter((e) => this.enabledCategories.has(e.category))
+  }
+
+  getFilteredText(): string {
+    return this.getFilteredEntries().map(formatLogLine).join('\n')
+  }
+
+  getAllText(): string {
+    return this.entries.map(formatLogLine).join('\n')
+  }
+
+  async copyVisible(): Promise<boolean> {
+    const text = this.getFilteredText()
+    if (!text) return false
+    return copyText(text)
   }
 
   private render(): void {
-    const filtered = this.entries.filter((e) => this.enabledCategories.has(e.category))
-    this.container.textContent = filtered
-      .map((e) => `[${e.time}] [${e.category}] ${e.message}`)
-      .join('\n')
+    this.container.textContent = this.getFilteredText()
+  }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
   }
 }

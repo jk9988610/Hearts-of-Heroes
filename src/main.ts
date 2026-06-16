@@ -25,7 +25,9 @@ import {
   recruitOnTile,
   TUNTIAN_COST,
 } from './core/economy.ts'
-import { DebugLogger, LOG_CATEGORIES, type LogCategory } from './ui/debug.ts'
+import { DebugLogger } from './ui/debug.ts'
+import { bindDebugToolbar, logTickEvents } from './ui/debug-toolbar.ts'
+import { buildGameSnapshot, formatTileSelect } from './ui/debug-reports.ts'
 import type { FactionId, GameSave, GeneratedMap, MapTile } from './types/index.ts'
 
 const PLAYER_FACTION: FactionId = 'wei'
@@ -41,10 +43,6 @@ let map: GeneratedMap | null = null
 let save: GameSave | null = null
 let time: TimeController | null = null
 let selectedTileId: string | undefined
-
-function log(category: LogCategory, message: string): void {
-  logger.log(category, message)
-}
 
 function updateStatus(): void {
   if (!time || !save) return
@@ -128,31 +126,15 @@ function updatePanel(): void {
 
 function dumpGameState(): void {
   if (!map || !save) return
-
-  const lines: string[] = [
-    `游戏日: ${save.date}`,
-    `地图: ${map.gridSize}×${map.gridSize} = ${map.tiles.length} 地块`,
-    `玩家势力: ${PLAYER_FACTION}`,
-  ]
-
-  if (selectedTileId && map.tileById[selectedTileId]) {
-    const tile = map.tileById[selectedTileId]
-    const neighbors = getNeighborTiles(tile)
-    const owner = save.tiles[tile.id]?.owner ?? 'neutral'
-    const army = getArmyOnTile(save, tile.id)
-    lines.push(
-      `选中: ${tile.name} (${tile.gridX},${tile.gridY}) 归属=${owner}`,
-      `邻接 ${neighbors.length} 格: ${neighbors.map(formatTileBrief).join('、')}`,
-      army ? `驻军: ${army.troops} 兵` : '驻军: 无',
-    )
-  }
-
-  for (const [fid, faction] of Object.entries(save.factions)) {
-    const troops = faction.armies.reduce((s, a) => s + a.troops, 0)
-    lines.push(`势力 ${fid}: 粮=${faction.food.toFixed(1)} 军=${faction.armies.length}支/${troops}兵`)
-  }
-
-  logger.dump('游戏状态快照', lines)
+  const lines = buildGameSnapshot({
+    save,
+    map,
+    playerFaction: PLAYER_FACTION,
+    selectedTileId,
+    getNeighborTiles,
+    formatTileBrief,
+  })
+  logger.report('debug', '游戏状态快照', lines)
 }
 
 async function startNewGame(): Promise<void> {
@@ -176,15 +158,15 @@ async function bootstrap(): Promise<void> {
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  log('map', `地图：${map.tiles.length} 地块，邻接=网格四向`)
+  logger.log('map', `地图 ${map.tiles.length} 地块 · 邻接=网格四向`)
 
   const existing = await loadGame()
   if (existing) {
     save = migrateSave(existing)
-    log('system', `读档：第 ${save.date} 天 (v${save.version})`)
+    logger.log('system', `读档 第${save.date}天 v${save.version}`)
   } else {
     await startNewGame()
-    log('system', '新游戏：魏蜀吴各 1500 兵于都城')
+    logger.log('system', '新游戏 魏蜀吴各1500兵于都城')
   }
 
   time = new TimeController({
@@ -193,14 +175,13 @@ async function bootstrap(): Promise<void> {
       save.date = day
 
       const events = gameTick(save, map)
+      logTickEvents(logger, {
+        day,
+        ai: events.ai,
+        marches: events.marches,
+        battles: events.battles,
+      })
 
-      if (events.ai && events.ai.type !== 'idle') {
-        log('battle', `AI[${events.ai.faction}] ${events.ai.type}: ${events.ai.detail}`)
-      }
-      for (const m of events.marches) log('battle', m)
-      for (const b of events.battles) log('battle', b)
-
-      if (day % 5 === 0) log('tick', `第 ${day} 天`)
       if (day % 10 === 0) void saveGame(save)
 
       updateStatus()
@@ -208,7 +189,7 @@ async function bootstrap(): Promise<void> {
       renderMap()
     },
     onPauseChange: (paused) => {
-      log('system', paused ? '游戏暂停' : '游戏继续')
+      logger.log('system', paused ? '暂停' : '继续')
       updateStatus()
     },
   })
@@ -219,30 +200,30 @@ async function bootstrap(): Promise<void> {
   updateStatus()
   updatePanel()
   renderMap()
-  log('system', 'Sprint 2：募兵/屯田/点击邻格调兵；绿框=邻接')
+  logger.log('system', '就绪 · 募兵/屯田/邻格调兵 · 绿框=邻接')
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
   if (!save || !map) return false
   const fromTile = map.tileById[fromTileId]
   if (!fromTile || !fromTile.neighbors.includes(toTileId)) {
-    log('system', '只能移动到邻接格')
+    logger.log('system', '只能移动到邻接格')
     return false
   }
 
   const army = getArmyOnTile(save, fromTileId)
   if (!army || army.faction !== PLAYER_FACTION) {
-    log('system', '该地块无己方驻军')
+    logger.log('system', '该地块无己方驻军')
     return false
   }
   if (army.inCombat || army.marchDaysLeft) {
-    log('system', '军队行军中或战斗中')
+    logger.log('system', '军队行军中或战斗中')
     return false
   }
 
   if (orderMarch(army, toTileId)) {
     const dest = map.tileById[toTileId]?.name ?? toTileId
-    log('battle', `魏军 ${fromTile.name} → ${dest}（2天）`)
+    logger.log('battle', `魏军 ${fromTile.name} → ${dest}（2天）`)
     updatePanel()
     renderMap()
     return true
@@ -255,10 +236,13 @@ function bindUi(): void {
   const saveBtn = document.querySelector<HTMLButtonElement>('#btn-save')!
   const loadBtn = document.querySelector<HTMLButtonElement>('#btn-load')!
   const newBtn = document.querySelector<HTMLButtonElement>('#btn-new')!
-  const clearBtn = document.querySelector<HTMLButtonElement>('#btn-log-clear')!
-  const dumpBtn = document.querySelector<HTMLButtonElement>('#btn-log-dump')!
   const recruitBtn = document.querySelector<HTMLButtonElement>('#btn-recruit')!
   const tuntianBtn = document.querySelector<HTMLButtonElement>('#btn-tuntian')!
+
+  bindDebugToolbar(logger, {
+    onDump: dumpGameState,
+    filterButtonSelector: '[data-filter]',
+  })
 
   pauseBtn.addEventListener('click', () => time?.togglePause())
 
@@ -268,29 +252,17 @@ function bindUi(): void {
       time?.setSpeed(speed)
       document.querySelectorAll('[data-speed]').forEach((b) => b.classList.remove('active'))
       btn.classList.add('active')
-      log('system', `速度 ×${speed}`)
+      logger.log('system', `速度 ×${speed}`)
       updateStatus()
     })
   })
   document.querySelector<HTMLButtonElement>('[data-speed="1"]')?.classList.add('active')
 
-  clearBtn.addEventListener('click', () => logger.clear())
-
-  dumpBtn.addEventListener('click', () => dumpGameState())
-
-  for (const category of LOG_CATEGORIES) {
-    const btn = document.querySelector<HTMLButtonElement>(`[data-filter="${category}"]`)
-    btn?.addEventListener('click', () => {
-      const enabled = logger.toggleCategory(category)
-      btn.classList.toggle('active', enabled)
-    })
-  }
-
   recruitBtn.addEventListener('click', () => {
     if (!save || !selectedTileId) return
     const armyId = `army_${PLAYER_FACTION}_${selectedTileId}`
     if (recruitOnTile(save, selectedTileId, PLAYER_FACTION, armyId)) {
-      log('system', `${selectedTileId} 募兵 +1000`)
+      logger.log('system', `募兵 ${selectedTileId} +1000`)
       updatePanel()
       renderMap()
     }
@@ -299,7 +271,7 @@ function bindUi(): void {
   tuntianBtn.addEventListener('click', () => {
     if (!save || !selectedTileId) return
     if (buildTuntian(save, selectedTileId, PLAYER_FACTION)) {
-      log('system', `${selectedTileId} 建造屯田`)
+      logger.log('system', `屯田 ${selectedTileId}`)
       updatePanel()
       renderMap()
     }
@@ -308,18 +280,18 @@ function bindUi(): void {
   saveBtn.addEventListener('click', async () => {
     if (!save) return
     await saveGame(save)
-    log('system', `存档：第 ${save.date} 天`)
+    logger.log('system', `存档 第${save.date}天`)
   })
 
   loadBtn.addEventListener('click', async () => {
     const loaded = await loadGame()
     if (!loaded) {
-      log('system', '读档失败')
+      logger.log('system', '读档失败')
       return
     }
     save = migrateSave(loaded)
     time?.setGameDay(save.date)
-    log('system', `读档：第 ${save.date} 天`)
+    logger.log('system', `读档 第${save.date}天`)
     updateStatus()
     updatePanel()
     renderMap()
@@ -329,7 +301,7 @@ function bindUi(): void {
     if (!confirm('新开游戏？当前进度将被覆盖。')) return
     await deleteSave()
     await startNewGame()
-    log('system', '新游戏已开始')
+    logger.log('system', '新游戏已开始')
     updateStatus()
     updatePanel()
     renderMap()
@@ -349,11 +321,14 @@ function bindUi(): void {
     }
 
     selectedTileId = tile.id
-    const owner = save.tiles[tile.id]?.owner ?? 'neutral'
-    const neighbors = getNeighborTiles(tile)
-    const army = getArmyOnTile(save, tile.id)
-    log('tile', `选中 ${tile.name}(${tile.gridX},${tile.gridY}) 归属${owner}${army ? ` 兵${army.troops}` : ''}`)
-    log('tile', `邻接 ${neighbors.length} 格: ${neighbors.map(formatTileBrief).join('、')}`)
+    const lines = formatTileSelect({
+      tile,
+      owner: save.tiles[tile.id]?.owner ?? 'neutral',
+      army: getArmyOnTile(save, tile.id),
+      neighbors: getNeighborTiles(tile),
+      formatTileBrief,
+    })
+    for (const line of lines) logger.log('tile', line)
     updatePanel()
     renderMap()
   })
@@ -371,6 +346,6 @@ function bindUi(): void {
 }
 
 bootstrap().catch((err) => {
-  log('system', `启动失败：${err instanceof Error ? err.message : String(err)}`)
+  logger.log('system', `启动失败: ${err instanceof Error ? err.message : String(err)}`)
   statusEl.textContent = '启动失败'
 })

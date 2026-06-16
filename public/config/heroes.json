@@ -1,0 +1,23 @@
+[
+  {
+    "id": "caocao",
+    "name": "曹操",
+    "faction": "wei",
+    "attack": 85,
+    "defense": 80
+  },
+  {
+    "id": "liubei",
+    "name": "刘备",
+    "faction": "shu",
+    "attack": 75,
+    "defense": 85
+  },
+  {
+    "id": "sunquan",
+    "name": "孙权",
+    "faction": "wu",
+    "attack": 78,
+    "defense": 82
+  }
+]

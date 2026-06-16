@@ -1,0 +1,20 @@
+[
+  {
+    "id": "tuntian_plus",
+    "name": "广开屯田",
+    "cost": 30,
+    "effect": { "type": "food_multiply", "value": 1.5 }
+  },
+  {
+    "id": "iron_army",
+    "name": "坚甲厉兵",
+    "cost": 40,
+    "effect": { "type": "defense_multiply", "value": 1.2 }
+  },
+  {
+    "id": "fast_march",
+    "name": "急行军",
+    "cost": 25,
+    "effect": { "type": "march_speed", "value": 0.5 }
+  }
+]

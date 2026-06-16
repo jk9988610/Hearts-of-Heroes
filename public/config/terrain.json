@@ -1,0 +1,113 @@
+{
+  "gridSize": 6,
+  "keyTiles": [
+    {
+      "id": "yecheng",
+      "name": "邺城",
+      "type": "plain",
+      "x": 0,
+      "y": 0,
+      "owner": "wei",
+      "neighbors": ["julu", "guangzong"]
+    },
+    {
+      "id": "xuchang",
+      "name": "许昌",
+      "type": "plain",
+      "x": 2,
+      "y": 1,
+      "owner": "wei",
+      "neighbors": ["chenliu", "guangzong", "runan"]
+    },
+    {
+      "id": "puyang",
+      "name": "濮阳",
+      "type": "plain",
+      "x": 3,
+      "y": 0,
+      "owner": "wei",
+      "neighbors": ["chenliu", "dongjun"]
+    },
+    {
+      "id": "chenliu",
+      "name": "陈留",
+      "type": "plain",
+      "x": 3,
+      "y": 1,
+      "owner": "wei",
+      "neighbors": ["xuchang", "puyang", "runan"]
+    },
+    {
+      "id": "chengdu",
+      "name": "成都",
+      "type": "mountain",
+      "x": 0,
+      "y": 5,
+      "owner": "shu",
+      "neighbors": ["hanzhong", "jiangzhou"]
+    },
+    {
+      "id": "hanzhong",
+      "name": "汉中",
+      "type": "mountain",
+      "x": 1,
+      "y": 4,
+      "owner": "shu",
+      "neighbors": ["chengdu", "xiangyang", "changan"]
+    },
+    {
+      "id": "xiaopei",
+      "name": "小沛",
+      "type": "plain",
+      "x": 4,
+      "y": 1,
+      "owner": "shu",
+      "neighbors": ["xuzhou", "runan", "shouchun"]
+    },
+    {
+      "id": "xiangyang",
+      "name": "襄阳",
+      "type": "river",
+      "x": 2,
+      "y": 3,
+      "owner": "shu",
+      "neighbors": ["hanzhong", "changan", "jiangling"]
+    },
+    {
+      "id": "jianye",
+      "name": "建业",
+      "type": "river",
+      "x": 5,
+      "y": 4,
+      "owner": "wu",
+      "neighbors": ["shouchun", "jiangling", "wuchang"]
+    },
+    {
+      "id": "xuzhou",
+      "name": "徐州",
+      "type": "plain",
+      "x": 5,
+      "y": 1,
+      "owner": "wu",
+      "neighbors": ["xiaopei", "shouchun", "dongjun"]
+    },
+    {
+      "id": "jiangling",
+      "name": "江陵",
+      "type": "river",
+      "x": 3,
+      "y": 4,
+      "owner": "wu",
+      "neighbors": ["xiangyang", "jianye", "wuchang"]
+    },
+    {
+      "id": "changan",
+      "name": "长安",
+      "type": "plain",
+      "x": 1,
+      "y": 2,
+      "owner": "neutral",
+      "neighbors": ["hanzhong", "xiangyang", "luoyang"]
+    }
+  ]
+}

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>三国雄心 · Sprint 0</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Noto Serif SC", "Songti SC", serif;
+        background: #f4efe4;
+        color: #2c2416;
+      }
+      #app {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 1rem;
+      }
+      h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      button {
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #8b7355;
+        background: #ebe3d4;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button.active { background: #c9b896; font-weight: bold; }
+      #status { font-size: 0.9rem; margin-bottom: 0.5rem; }
+      #log {
+        background: #1e1e1e;
+        color: #d4d4d4;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        padding: 0.75rem;
+        height: 220px;
+        overflow-y: auto;
+        border-radius: 4px;
+        white-space: pre-wrap;
+      }
+      canvas {
+        display: block;
+        margin-top: 0.75rem;
+        border: 1px solid #8b7355;
+        background: #e8e0d0;
+        max-width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <h1>三国雄心 · Sprint 0 测试台</h1>
+      <div id="status">加载中…</div>
+      <div class="toolbar">
+        <button id="btn-pause" type="button">暂停 (Space)</button>
+        <button id="btn-speed-1" type="button" data-speed="1">×1</button>
+        <button id="btn-speed-2" type="button" data-speed="2">×2</button>
+        <button id="btn-speed-5" type="button" data-speed="5">×5</button>
+        <button id="btn-save" type="button">手动存档</button>
+        <button id="btn-load" type="button">读档</button>
+        <button id="btn-new" type="button">新游戏</button>
+      </div>
+      <div id="log"></div>
+      <canvas id="map" width="600" height="600"></canvas>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+import { assetUrl } from './core/paths.ts'
 import { TimeController, type SpeedMultiplier } from './core/time.ts'
 import {
   applyKeyCityOwners,
@@ -218,7 +219,7 @@ async function startNewGame(): Promise<void> {
   const terrainConfig = await loadTerrainConfig()
   const owners = getInitialOwners(map)
   applyKeyCityOwners(terrainConfig, owners)
-  const heroRes = await fetch('/config/heroes.json')
+  const heroRes = await fetch(assetUrl('config/heroes.json'))
   const heroes = (await heroRes.json()) as { id: string; faction: string }[]
   const heroIdsByFaction: Record<string, string[]> = { wei: [], shu: [], wu: [] }
   for (const h of heroes) {

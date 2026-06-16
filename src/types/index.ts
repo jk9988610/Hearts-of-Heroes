@@ -87,7 +87,7 @@ export interface GeneratedMap {
   tileById: Record<string, MapTile>
 }
 
-export const SAVE_VERSION = '0.4.0'
+export const SAVE_VERSION = '0.4.1'
 export const DB_NAME = 'sanguo-save'
 export const DB_STORE = 'saves'
 export const SAVE_KEY = 'sanguo-save-v1'

@@ -4,6 +4,7 @@ import type {
   TerrainConfig,
   TerrainType,
 } from '../types/index.ts'
+import { assetUrl } from '../core/paths.ts'
 import {
   getFactionMarkerColor,
   type ArmyDisplayState,
@@ -47,7 +48,7 @@ function seededType(seed: number): TerrainType {
 }
 
 export async function loadTerrainConfig(): Promise<TerrainConfig> {
-  const res = await fetch('/config/terrain.json')
+  const res = await fetch(assetUrl('config/terrain.json'))
   if (!res.ok) throw new Error(`无法加载 terrain.json: ${res.status}`)
   return (await res.json()) as TerrainConfig
 }

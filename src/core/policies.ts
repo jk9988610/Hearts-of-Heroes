@@ -1,8 +1,9 @@
 import type { PolicyConfig } from '../types/index.ts'
 import type { FactionId, GameSave } from '../types/index.ts'
+import { assetUrl } from './paths.ts'
 
 export async function loadPoliciesConfig(): Promise<PolicyConfig[]> {
-  const res = await fetch('/config/policies.json')
+  const res = await fetch(assetUrl('config/policies.json'))
   if (!res.ok) throw new Error(`无法加载 policies.json: ${res.status}`)
   return (await res.json()) as PolicyConfig[]
 }

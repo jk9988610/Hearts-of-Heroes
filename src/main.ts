@@ -7,8 +7,8 @@ import {
   getInitialOwners,
   hitTestTile,
   loadTerrainConfig,
-  type TileOverlay,
 } from './map/generator.ts'
+import { buildArmyDisplay, getArmyForUi } from './map/army-display.ts'
 import {
   createNewGame,
   deleteSave,
@@ -16,8 +16,8 @@ import {
   migrateSave,
   saveGame,
 } from './core/save.ts'
-import { gameTick, getArmyOnTile, playerCanAct } from './core/game.ts'
-import { orderMarch } from './core/combat.ts'
+import { gameTick, playerCanAct } from './core/game.ts'
+import { MARCH_DAYS, findArmyOnTile, orderMarch } from './core/combat.ts'
 import {
   buildTuntian,
   canBuildTuntian,
@@ -25,16 +25,25 @@ import {
   recruitOnTile,
   TUNTIAN_COST,
 } from './core/economy.ts'
+import {
+  activatePolicy,
+  canActivatePolicy,
+  getMarchDays,
+  loadPoliciesConfig,
+} from './core/policies.ts'
+import { checkVictory } from './core/victory.ts'
+import { LOCAL_VERSION } from './core/version.ts'
 import { DebugLogger } from './ui/debug.ts'
 import { bindDebugToolbar, logTickEvents } from './ui/debug-toolbar.ts'
 import { buildGameSnapshot, formatTileSelect } from './ui/debug-reports.ts'
-import type { FactionId, GameSave, GeneratedMap, MapTile } from './types/index.ts'
+import type { FactionId, GameSave, GeneratedMap, MapTile, PolicyConfig } from './types/index.ts'
 
 const PLAYER_FACTION: FactionId = 'wei'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const panelInfoEl = document.querySelector<HTMLDivElement>('#panel-info')!
+const policyListEl = document.querySelector<HTMLDivElement>('#policy-list')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
 
 const logger = new DebugLogger({ container: logEl })
@@ -42,7 +51,9 @@ const logger = new DebugLogger({ container: logEl })
 let map: GeneratedMap | null = null
 let save: GameSave | null = null
 let time: TimeController | null = null
+let policies: PolicyConfig[] = []
 let selectedTileId: string | undefined
+let gameEnded = false
 
 function updateStatus(): void {
   if (!time || !save) return
@@ -60,23 +71,6 @@ function formatTileBrief(tile: MapTile): string {
   return `${tile.name}(${tile.gridX},${tile.gridY})`
 }
 
-function buildOverlays(): Record<string, TileOverlay> {
-  const overlays: Record<string, TileOverlay> = {}
-  if (!save) return overlays
-
-  for (const faction of Object.values(save.factions)) {
-    for (const army of faction.armies) {
-      const status = army.inCombat
-        ? `战${army.combatDaysLeft ?? 0}`
-        : army.marchDaysLeft
-          ? `行${army.marchDaysLeft}`
-          : undefined
-      overlays[army.tileId] = { troops: army.troops, status }
-    }
-  }
-  return overlays
-}
-
 function renderMap(): void {
   if (!map || !save || !canvas) return
   const owners: Record<string, string> = {}
@@ -88,7 +82,38 @@ function renderMap(): void {
       ? getNeighborTiles(map.tileById[selectedTileId]).map((t) => t.id)
       : []
     : undefined
-  drawMapPreview(canvas, map, owners, selectedTileId, neighborIds, buildOverlays())
+  drawMapPreview(
+    canvas,
+    map,
+    owners,
+    selectedTileId,
+    neighborIds,
+    buildArmyDisplay(save),
+  )
+}
+
+function renderPolicies(): void {
+  if (!save || !policyListEl) return
+  policyListEl.innerHTML = ''
+
+  for (const policy of policies) {
+    const btn = document.createElement('button')
+    const owned = save.factions[PLAYER_FACTION]?.policies.includes(policy.id)
+    btn.type = 'button'
+    btn.textContent = owned
+      ? `✓ ${policy.name}`
+      : `${policy.name} (${policy.cost}粮)`
+    btn.disabled = owned || !canActivatePolicy(save, PLAYER_FACTION, policy)
+    btn.addEventListener('click', () => {
+      if (!save || activatePolicy(save, PLAYER_FACTION, policy)) {
+        logger.log('system', `国策 ${policy.name} 已激活`)
+        updatePanel()
+        renderPolicies()
+        renderMap()
+      }
+    })
+    policyListEl.appendChild(btn)
+  }
 }
 
 function updatePanel(): void {
@@ -99,6 +124,7 @@ function updatePanel(): void {
     panelInfoEl.textContent = '点击地图选择地块（你操控：魏）'
     recruitBtn.disabled = true
     tuntianBtn.disabled = true
+    renderPolicies()
     return
   }
 
@@ -106,22 +132,27 @@ function updatePanel(): void {
   const state = save.tiles[selectedTileId]
   if (!tile || !state) return
 
-  const army = getArmyOnTile(save, selectedTileId)
+  const army = getArmyForUi(save, selectedTileId)
   const isPlayer = playerCanAct(save, selectedTileId, PLAYER_FACTION)
   const food = save.factions[PLAYER_FACTION]?.food ?? 0
 
   const lines = [
-    `${tile.name} · ${state.owner} · 粮产出参考地形`,
+    `${tile.name} · ${state.owner}`,
     army
-      ? `驻军 ${army.troops} 兵${army.marchDaysLeft ? ` · 行军中${army.marchDaysLeft}天` : ''}${army.inCombat ? ` · 战斗中${army.combatDaysLeft}天` : ''}`
+      ? `驻军 ${army.troops} 兵${army.marchDaysLeft ? ` · 行→${army.targetTileId}(${army.marchDaysLeft}天)` : ''}${army.inCombat ? ` · 战${army.combatDaysLeft}天` : ''}`
       : '无驻军',
-    isPlayer ? '己方领地 · 点击邻格可调兵' : '非己方领地',
+    isPlayer ? '己方 · 选中有兵地块后点邻格调兵' : '非己方',
   ]
   panelInfoEl.textContent = lines.join(' | ')
 
-  recruitBtn.disabled = !isPlayer || !canRecruit(save, PLAYER_FACTION)
+  recruitBtn.disabled = gameEnded || !isPlayer || !canRecruit(save, PLAYER_FACTION)
   tuntianBtn.disabled =
-    !isPlayer || !canBuildTuntian(save, selectedTileId) || food < TUNTIAN_COST
+    gameEnded ||
+    !isPlayer ||
+    !canBuildTuntian(save, selectedTileId) ||
+    food < TUNTIAN_COST
+
+  renderPolicies()
 }
 
 function dumpGameState(): void {
@@ -137,8 +168,22 @@ function dumpGameState(): void {
   logger.report('debug', '游戏状态快照', lines)
 }
 
+function handleVictory(): void {
+  if (!save || !map || gameEnded) return
+  const result = checkVictory(save, map, PLAYER_FACTION)
+  if (result.outcome === 'playing') return
+
+  gameEnded = true
+  time?.pause()
+  logger.report('system', result.outcome === 'win' ? '胜利' : '失败', [
+    result.reason ?? '游戏结束',
+  ])
+  alert(result.outcome === 'win' ? `胜利！${result.reason}` : `失败：${result.reason}`)
+}
+
 async function startNewGame(): Promise<void> {
   if (!map) return
+  gameEnded = false
   const terrainConfig = await loadTerrainConfig()
   const owners = getInitialOwners(map)
   applyKeyCityOwners(terrainConfig, owners)
@@ -155,10 +200,13 @@ async function startNewGame(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  document.querySelector('#app-version')!.textContent = `v${LOCAL_VERSION.version}`
+
+  policies = await loadPoliciesConfig()
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  logger.log('map', `地图 ${map.tiles.length} 地块 · 邻接=网格四向`)
+  logger.log('map', `地图 ${map.tiles.length} 地块 · 驻军显示=色点+兵力+行军箭头`)
 
   const existing = await loadGame()
   if (existing) {
@@ -171,7 +219,7 @@ async function bootstrap(): Promise<void> {
 
   time = new TimeController({
     onTick: (day) => {
-      if (!save || !map) return
+      if (!save || !map || gameEnded) return
       save.date = day
 
       const events = gameTick(save, map)
@@ -183,6 +231,7 @@ async function bootstrap(): Promise<void> {
       })
 
       if (day % 10 === 0) void saveGame(save)
+      handleVictory()
 
       updateStatus()
       updatePanel()
@@ -200,30 +249,31 @@ async function bootstrap(): Promise<void> {
   updateStatus()
   updatePanel()
   renderMap()
-  logger.log('system', '就绪 · 募兵/屯田/邻格调兵 · 绿框=邻接')
+  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 日志从上到下 · 行军见箭头`)
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
-  if (!save || !map) return false
+  if (!save || !map || gameEnded) return false
   const fromTile = map.tileById[fromTileId]
   if (!fromTile || !fromTile.neighbors.includes(toTileId)) {
     logger.log('system', '只能移动到邻接格')
     return false
   }
 
-  const army = getArmyOnTile(save, fromTileId)
+  const army = findArmyOnTile(save, fromTileId)
   if (!army || army.faction !== PLAYER_FACTION) {
-    logger.log('system', '该地块无己方驻军')
+    logger.log('system', '该地块无可用己方驻军')
     return false
   }
   if (army.inCombat || army.marchDaysLeft) {
-    logger.log('system', '军队行军中或战斗中')
+    logger.log('system', '军队战斗中')
     return false
   }
 
-  if (orderMarch(army, toTileId)) {
+  const days = getMarchDays(save, PLAYER_FACTION, MARCH_DAYS)
+  if (orderMarch(army, toTileId, days)) {
     const dest = map.tileById[toTileId]?.name ?? toTileId
-    logger.log('battle', `魏军 ${fromTile.name} → ${dest}（2天）`)
+    logger.log('battle', `魏军 ${fromTile.name} → ${dest}（${days}天，见箭头）`)
     updatePanel()
     renderMap()
     return true
@@ -290,6 +340,7 @@ function bindUi(): void {
       return
     }
     save = migrateSave(loaded)
+    gameEnded = false
     time?.setGameDay(save.date)
     logger.log('system', `读档 第${save.date}天`)
     updateStatus()
@@ -324,7 +375,7 @@ function bindUi(): void {
     const lines = formatTileSelect({
       tile,
       owner: save.tiles[tile.id]?.owner ?? 'neutral',
-      army: getArmyOnTile(save, tile.id),
+      army: getArmyForUi(save, tile.id),
       neighbors: getNeighborTiles(tile),
       formatTileBrief,
     })

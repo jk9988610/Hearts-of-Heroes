@@ -1,5 +1,6 @@
 import type { Army, FactionId, GameSave, TerrainType } from '../types/index.ts'
 import { markTileCaptured } from './economy.ts'
+import { getDefensePolicyMultiplier } from './policies.ts'
 
 export const MARCH_DAYS = 2
 export const COMBAT_DAYS = 3
@@ -33,9 +34,10 @@ export function resolveBattle(
   attackerTroops: number,
   defenderTroops: number,
   terrain: TerrainType,
+  defenderPolicyMult = 1,
 ): BattleResult {
   const atkPower = calcCombatPower(attackerTroops, true, terrain)
-  const defPower = calcCombatPower(defenderTroops, false, terrain)
+  const defPower = calcCombatPower(defenderTroops, false, terrain) * defenderPolicyMult
   const total = Math.max(atkPower + defPower, 1)
 
   let atkLossRate = 0.1 + 0.3 * (defPower / total)
@@ -113,10 +115,10 @@ export function totalFactionTroops(save: GameSave, faction: FactionId): number {
   return (save.factions[faction]?.armies ?? []).reduce((s, a) => s + a.troops, 0)
 }
 
-export function orderMarch(army: Army, targetTileId: string): boolean {
+export function orderMarch(army: Army, targetTileId: string, days = MARCH_DAYS): boolean {
   if (army.inCombat || army.marchDaysLeft) return false
   army.targetTileId = targetTileId
-  army.marchDaysLeft = MARCH_DAYS
+  army.marchDaysLeft = days
   return true
 }
 
@@ -151,7 +153,12 @@ export function applyBattleOutcome(
   defender: Army,
   terrain: TerrainType,
 ): BattleResult {
-  const result = resolveBattle(attacker.troops, defender.troops, terrain)
+  const result = resolveBattle(
+    attacker.troops,
+    defender.troops,
+    terrain,
+    getDefensePolicyMultiplier(save, defender.faction),
+  )
   attacker.troops = result.attackerTroops
   defender.troops = result.defenderTroops
 

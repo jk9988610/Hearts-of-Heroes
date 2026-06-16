@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>三国雄心 · Sprint 2</title>
+    <title>三国雄心 · v0.3</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -47,7 +47,8 @@
         border: 1px solid #8b7355;
         font-size: 0.9rem;
       }
-      #panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.35rem; }
+      #policy-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+      #policy-list button { font-size: 0.85rem; }
       #log {
         background: #1e1e1e;
         color: #d4d4d4;
@@ -70,7 +71,7 @@
   </head>
   <body>
     <div id="app">
-      <h1>三国雄心 · Sprint 2</h1>
+      <h1>三国雄心 <span id="app-version" style="font-size:0.75rem;color:#5c4f3a">v0.3</span></h1>
       <div id="status">加载中…</div>
       <div class="toolbar">
         <button id="btn-pause" type="button">暂停 (Space)</button>
@@ -87,12 +88,14 @@
           <button id="btn-recruit" type="button" disabled>募兵 (20粮→1000兵)</button>
           <button id="btn-tuntian" type="button" disabled>屯田 (10粮)</button>
         </div>
+        <div id="policy-list"></div>
       </div>
       <div class="toolbar debug-toolbar">
         <span class="toolbar-label">调试</span>
         <button id="btn-log-clear" type="button">清空日志</button>
         <button id="btn-log-dump" type="button">打印详情</button>
         <button id="btn-log-copy" type="button">复制日志</button>
+        <button id="btn-version-check" type="button">检查版本</button>
         <span class="toolbar-label">筛选</span>
         <button id="btn-filter-tick" type="button" data-filter="tick" class="active">Tick</button>
         <button id="btn-filter-tile" type="button" data-filter="tile" class="active">地块</button>

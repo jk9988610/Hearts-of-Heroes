@@ -1,4 +1,5 @@
 import type { FactionId, GameSave, GeneratedMap, MapTile, TileState } from '../types/index.ts'
+import { getFoodPolicyMultiplier } from '../core/policies.ts'
 
 const BASE_YIELD: Record<MapTile['type'], number> = {
   plain: 2,
@@ -30,7 +31,8 @@ export function processEconomy(save: GameSave, map: GeneratedMap): void {
     if (!state || state.owner === 'neutral') continue
 
     yields[state.owner] =
-      (yields[state.owner] ?? 0) + getTileFoodYield(tile, state)
+      (yields[state.owner] ?? 0) +
+      getTileFoodYield(tile, state) * getFoodPolicyMultiplier(save, state.owner)
 
     if (state.occupationDays !== undefined && state.occupationDays < 3) {
       state.occupationDays += 1

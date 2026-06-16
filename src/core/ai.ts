@@ -2,6 +2,7 @@ import type { FactionId, GameSave, GeneratedMap } from '../types/index.ts'
 import { computeGridNeighbors } from '../map/generator.ts'
 import {
   findArmyOnTile,
+  MARCH_DAYS,
   orderMarch,
   totalFactionTroops,
 } from './combat.ts'
@@ -11,6 +12,7 @@ import {
   canRecruit,
   recruitOnTile,
 } from './economy.ts'
+import { getMarchDays } from './policies.ts'
 
 const FACTION_ORDER: FactionId[] = ['wei', 'shu', 'wu']
 
@@ -105,7 +107,7 @@ export function runAiTurn(
     const target = weakestEnemyNeighbor(save, map, faction)
     if (target) {
       const army = findArmyOnTile(save, target.from)
-      if (army && orderMarch(army, target.to)) {
+      if (army && orderMarch(army, target.to, getMarchDays(save, faction, MARCH_DAYS))) {
         return {
           faction,
           type: 'attack',

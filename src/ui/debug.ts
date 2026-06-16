@@ -65,15 +65,15 @@ export class DebugLogger {
       category,
       message,
     }
-    this.entries.unshift(entry)
+    this.entries.push(entry)
     if (this.entries.length > this.maxLines) {
-      this.entries.length = this.maxLines
+      this.entries.shift()
     }
     console.log(formatLogLine(entry))
     this.render()
   }
 
-  /** 结构化报告：统一标题 + 缩进条目 */
+  /** 结构化报告：从上到下顺序输出 */
   report(category: LogCategory, title: string, lines: string[]): void {
     this.log(category, `── ${title} ──`)
     for (const line of lines) {
@@ -106,6 +106,7 @@ export class DebugLogger {
 
   private render(): void {
     this.container.textContent = this.getFilteredText()
+    this.container.scrollTop = this.container.scrollHeight
   }
 }
 

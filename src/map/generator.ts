@@ -119,12 +119,18 @@ const FACTION_COLORS: Record<string, string> = {
   neutral: '#9a9080',
 }
 
+export interface TileOverlay {
+  troops?: number
+  status?: string
+}
+
 export function drawMapPreview(
   canvas: HTMLCanvasElement,
   map: GeneratedMap,
   owners: Record<string, string>,
   highlightId?: string,
   neighborIds?: string[],
+  overlays?: Record<string, TileOverlay>,
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -170,7 +176,23 @@ export function drawMapPreview(
       ctx.font = `${Math.max(10, cell * 0.22)}px "Noto Serif SC", serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(tile.name, px + cell / 2, py + cell / 2)
+      ctx.fillText(tile.name, px + cell / 2, py + cell / 2 - (overlays?.[tile.id]?.troops ? 6 : 0))
+    }
+
+    const overlay = overlays?.[tile.id]
+    if (overlay?.troops) {
+      ctx.fillStyle = '#1a1208'
+      ctx.font = `bold ${Math.max(9, cell * 0.18)}px ui-monospace, monospace`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(String(overlay.troops), px + cell / 2, py + cell - 3)
+    }
+    if (overlay?.status) {
+      ctx.fillStyle = '#8b2500'
+      ctx.font = `${Math.max(8, cell * 0.15)}px ui-monospace, monospace`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillText(overlay.status, px + 3, py + 3)
     }
   }
 }

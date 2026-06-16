@@ -1,4 +1,13 @@
-export type LogCategory = 'tick' | 'tile' | 'system' | 'map' | 'debug'
+export type LogCategory = 'tick' | 'tile' | 'system' | 'map' | 'debug' | 'battle'
+
+export const LOG_CATEGORIES: LogCategory[] = [
+  'tick',
+  'tile',
+  'system',
+  'map',
+  'debug',
+  'battle',
+]
 
 export interface DebugLoggerOptions {
   container: HTMLElement
@@ -9,20 +18,25 @@ export class DebugLogger {
   private readonly container: HTMLElement
   private readonly maxLines: number
   private entries: { time: string; category: LogCategory; message: string }[] = []
-  private activeFilter: LogCategory | 'all' = 'all'
+  private enabledCategories = new Set<LogCategory>(LOG_CATEGORIES)
 
   constructor(options: DebugLoggerOptions) {
     this.container = options.container
     this.maxLines = options.maxLines ?? 500
   }
 
-  setFilter(filter: LogCategory | 'all'): void {
-    this.activeFilter = filter
-    this.render()
+  isCategoryEnabled(category: LogCategory): boolean {
+    return this.enabledCategories.has(category)
   }
 
-  getFilter(): LogCategory | 'all' {
-    return this.activeFilter
+  toggleCategory(category: LogCategory): boolean {
+    if (this.enabledCategories.has(category)) {
+      this.enabledCategories.delete(category)
+    } else {
+      this.enabledCategories.add(category)
+    }
+    this.render()
+    return this.enabledCategories.has(category)
   }
 
   log(category: LogCategory, message: string): void {
@@ -48,11 +62,7 @@ export class DebugLogger {
   }
 
   private render(): void {
-    const filtered =
-      this.activeFilter === 'all'
-        ? this.entries
-        : this.entries.filter((e) => e.category === this.activeFilter)
-
+    const filtered = this.entries.filter((e) => this.enabledCategories.has(e.category))
     this.container.textContent = filtered
       .map((e) => `[${e.time}] [${e.category}] ${e.message}`)
       .join('\n')

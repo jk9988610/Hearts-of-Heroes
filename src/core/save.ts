@@ -78,6 +78,7 @@ function addStarterArmies(save: GameSave): void {
 export function createNewGame(
   mapTileOwners: Record<string, string>,
   heroIdsByFaction: Record<string, string[]>,
+  playerFaction: FactionId = 'wei',
 ): GameSave {
   const tiles: GameSave['tiles'] = {}
   for (const [id, owner] of Object.entries(mapTileOwners)) {
@@ -93,6 +94,7 @@ export function createNewGame(
   const save: GameSave = {
     version: SAVE_VERSION,
     date: 0,
+    playerFaction,
     factions,
     tiles,
   }
@@ -110,6 +112,9 @@ export function migrateSave(save: GameSave): GameSave {
   )
   if (totalArmies === 0) {
     addStarterArmies(save)
+  }
+  if (!save.playerFaction) {
+    save.playerFaction = 'wei'
   }
   save.version = SAVE_VERSION
   return save

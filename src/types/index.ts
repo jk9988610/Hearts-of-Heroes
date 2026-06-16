@@ -64,6 +64,7 @@ export interface FactionState {
 export interface GameSave {
   version: string
   date: number
+  playerFaction: FactionId
   factions: Record<string, FactionState>
   tiles: Record<string, TileState>
 }
@@ -86,7 +87,7 @@ export interface GeneratedMap {
   tileById: Record<string, MapTile>
 }
 
-export const SAVE_VERSION = '0.3.0'
+export const SAVE_VERSION = '0.4.0'
 export const DB_NAME = 'sanguo-save'
 export const DB_STORE = 'saves'
 export const SAVE_KEY = 'sanguo-save-v1'

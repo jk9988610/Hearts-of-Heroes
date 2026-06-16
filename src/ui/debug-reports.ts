@@ -2,6 +2,7 @@ import type { Army, FactionId, GameSave, GeneratedMap, MapTile } from '../types/
 import { findArmyOnTile } from '../core/combat.ts'
 import { listAllArmies } from '../map/army-display.ts'
 import { LOCAL_VERSION } from '../core/version.ts'
+import { getFactionLabel } from '../core/factions.ts'
 
 export interface GameReportContext {
   save: GameSave
@@ -31,9 +32,9 @@ export function buildGameSnapshot(ctx: GameReportContext): string[] {
     `游戏日: ${save.date}`,
     `存档版本: ${save.version}`,
     `客户端: ${LOCAL_VERSION.version} (${LOCAL_VERSION.buildTime})`,
+    `操控势力: ${playerFaction} (${getFactionLabel(playerFaction)})`,
     `地图: ${map.gridSize}×${map.gridSize} = ${map.tiles.length} 地块`,
-    `玩家势力: ${playerFaction}`,
-    `玩家粮食: ${save.factions[playerFaction]?.food.toFixed(1) ?? 0}`,
+    `粮食: ${save.factions[playerFaction]?.food.toFixed(1) ?? 0}`,
   ]
 
   if (selectedTileId && map.tileById[selectedTileId]) {

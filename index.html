@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>三国雄心 · v0.3</title>
+    <title>三国雄心</title>
     <style>
       * { box-sizing: border-box; }
       body {
@@ -40,6 +40,17 @@
       .toolbar-label { font-size: 0.85rem; color: #5c4f3a; margin-right: 0.25rem; }
       .debug-toolbar { margin-bottom: 0.5rem; }
       #status { font-size: 0.9rem; margin-bottom: 0.5rem; }
+      #alert-banner {
+        margin-bottom: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        border: 1px solid #8b7355;
+      }
+      #alert-banner[data-type="info"] { background: #e8eef5; color: #2c3e50; }
+      #alert-banner[data-type="warn"] { background: #fff3cd; color: #7a4f01; border-color: #c9a227; }
+      #alert-banner[data-type="battle"] { background: #fde8e8; color: #8b0000; border-color: #c44; }
+      #alert-banner[data-type="success"] { background: #e8f5e9; color: #1b5e20; border-color: #6a9; }
       #panel {
         margin-bottom: 0.5rem;
         padding: 0.5rem 0.75rem;
@@ -49,30 +60,44 @@
       }
       #policy-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
       #policy-list button { font-size: 0.85rem; }
+      #panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.35rem; }
       #log {
         background: #1e1e1e;
         color: #d4d4d4;
         font-family: ui-monospace, monospace;
         font-size: 12px;
         padding: 0.75rem;
-        height: 220px;
+        height: 200px;
         overflow-y: auto;
         border-radius: 4px;
         white-space: pre-wrap;
       }
-      canvas {
-        display: block;
+      #map-viewport {
         margin-top: 0.75rem;
+        overflow: auto;
+        max-height: min(72vh, 620px);
         border: 1px solid #8b7355;
         background: #e8e0d0;
-        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+        cursor: grab;
+      }
+      #map-viewport:active { cursor: grabbing; }
+      canvas {
+        display: block;
+        width: 600px;
+        height: 600px;
+        max-width: none;
+      }
+      @media (max-width: 640px) {
+        canvas { width: 720px; height: 720px; }
       }
     </style>
   </head>
   <body>
     <div id="app">
-      <h1>三国雄心 <span id="app-version" style="font-size:0.75rem;color:#5c4f3a">v0.3</span></h1>
+      <h1>三国雄心 <span id="app-version" style="font-size:0.75rem;color:#5c4f3a">v0.4</span></h1>
       <div id="status">加载中…</div>
+      <div id="alert-banner" hidden></div>
       <div class="toolbar">
         <button id="btn-pause" type="button">暂停 (Space)</button>
         <button id="btn-speed-1" type="button" data-speed="1">×1</button>
@@ -82,8 +107,15 @@
         <button id="btn-load" type="button">读档</button>
         <button id="btn-new" type="button">新游戏</button>
       </div>
+      <div class="toolbar">
+        <span class="toolbar-label">操控势力</span>
+        <button type="button" data-faction="wei" class="active">魏</button>
+        <button type="button" data-faction="shu">蜀</button>
+        <button type="button" data-faction="wu">吴</button>
+        <span class="toolbar-label" style="margin-left:0.5rem">新游戏时生效</span>
+      </div>
       <div id="panel">
-        <div id="panel-info">点击地图选择地块（你操控：魏）</div>
+        <div id="panel-info">点击地图选择地块</div>
         <div id="panel-actions">
           <button id="btn-recruit" type="button" disabled>募兵 (20粮→1000兵)</button>
           <button id="btn-tuntian" type="button" disabled>屯田 (10粮)</button>
@@ -105,7 +137,9 @@
         <button id="btn-filter-debug" type="button" data-filter="debug" class="active">详情</button>
       </div>
       <div id="log"></div>
-      <canvas id="map" width="600" height="600"></canvas>
+      <div id="map-viewport">
+        <canvas id="map" width="600" height="600"></canvas>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

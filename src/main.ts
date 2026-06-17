@@ -9,7 +9,8 @@ import {
   loadTerrainConfig,
 } from './map/generator.ts'
 import { buildArmyDisplay, getArmyForUi } from './map/army-display.ts'
-import { buildCounterDisplay, drawCounterLayer } from './map/counter-layer.ts'
+import { buildCounterDisplay, drawCounterLayer, hitTestCounter } from './map/counter-layer.ts'
+import { renderLabelLayer } from './map/label-layer.ts'
 import { BattleAnimator } from './map/battle-animation.ts'
 import { drawMapLayer } from './core/map-layers/renderer.ts'
 import { DEFAULT_MAP_LAYER, type MapLayerId } from './core/map-layers/types.ts'
@@ -54,7 +55,7 @@ import {
   trainArmyGroup,
 } from './core/organization/army-group-ops.ts'
 import { setHeroRegistry } from './core/organization/hero-assign.ts'
-import { findCorpsById, getStandbyCorps } from './core/organization/queries.ts'
+import { findBattalionById, findCorpsById, getStandbyCorps } from './core/organization/queries.ts'
 import {
   buildTuntian,
   canBuildTuntian,
@@ -94,7 +95,9 @@ const panelArmyEl = document.querySelector<HTMLDivElement>('#panel-army')!
 const eventsPanelEl = document.querySelector<HTMLDivElement>('#events-panel')!
 const policyTreeEl = document.querySelector<HTMLDivElement>('#policy-tree')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
+const labelLayer = document.querySelector<HTMLDivElement>('#label-layer')!
 const counterCanvas = document.querySelector<HTMLCanvasElement>('#counter-layer')!
+const mapStack = document.querySelector<HTMLDivElement>('#map-stack')!
 const mapViewport = document.querySelector<HTMLDivElement>('#map-viewport')!
 const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap')!
 const dockBody = document.querySelector<HTMLDivElement>('#dock-body')!
@@ -116,6 +119,7 @@ let time: TimeController | null = null
 let policies: PolicyConfig[] = []
 let heroes: HeroConfig[] = []
 let selectedTileId: string | undefined
+let selectedBattalionId: string | undefined
 let pendingFaction: FactionId = 'wei'
 let gameEnded = false
 let mapLayer: MapLayerId = DEFAULT_MAP_LAYER
@@ -126,6 +130,7 @@ let selectedCorpsId: string | null = null
 let selectedArmyGroupId: string | null = null
 let redrawMinimap: (() => void) | null = null
 let modalHost: ModalHost | null = null
+let lastCounterItems: ReturnType<typeof buildCounterDisplay> = []
 
 function playerFaction(): FactionId {
   return save?.playerFaction ?? pendingFaction
@@ -140,11 +145,21 @@ function pushRecentEvent(msg: string): void {
 }
 
 function selectedPlayerTileName(): string | null {
-  if (!save || !map || !selectedTileId) return null
+  if (!save || !map) return null
+  const pf = playerFaction()
+
+  if (selectedBattalionId) {
+    const battalion = findBattalionById(save, selectedBattalionId)
+    if (!battalion || battalion.faction !== pf) return null
+    const tile = map.tileById[battalion.tileId]
+    return tile?.name ?? null
+  }
+
+  if (!selectedTileId) return null
   const tile = map.tileById[selectedTileId]
-  if (!tile || !playerCanAct(save, selectedTileId, playerFaction())) return null
+  if (!tile || !playerCanAct(save, selectedTileId, pf)) return null
   const battalion = findBattalionOnTile(save, selectedTileId)
-  if (!battalion || battalion.faction !== playerFaction()) return null
+  if (!battalion || battalion.faction !== pf) return null
   return tile.name
 }
 
@@ -211,9 +226,14 @@ function renderMap(): void {
   for (const [id, tile] of Object.entries(save.tiles)) {
     owners[id] = tile.owner
   }
-  const neighborIds = selectedTileId
-    ? map.tileById[selectedTileId]
-      ? getNeighborTiles(map.tileById[selectedTileId]).map((t) => t.id)
+  const highlightTileId = selectedTileId
+  const neighborSourceId =
+    selectedBattalionId
+      ? findBattalionById(save, selectedBattalionId)?.tileId
+      : selectedTileId
+  const neighborIds = neighborSourceId
+    ? map.tileById[neighborSourceId]
+      ? getNeighborTiles(map.tileById[neighborSourceId]).map((t) => t.id)
       : []
     : undefined
 
@@ -229,16 +249,13 @@ function renderMap(): void {
 
   const useCounters = mapLayer === 'military'
   const scale = mapViewportCtrl?.getScale() ?? 1
-  const selectedBattalion = selectedTileId
-    ? findBattalionOnTile(save, selectedTileId) ?? getArmyForUi(save, selectedTileId)
-    : null
 
   drawMapLayer(mapLayer, {
     canvas,
     map,
     save,
     owners,
-    highlightId: selectedTileId,
+    highlightId: highlightTileId,
     neighborIds,
     armyDisplay: useCounters ? armyDisplay : undefined,
     militaryOptions: {
@@ -248,16 +265,19 @@ function renderMap(): void {
     },
   })
 
+  renderLabelLayer(labelLayer, canvas, map, scale)
+
   if (useCounters) {
     const group = selectedArmyGroupId ? findArmyGroupById(save, selectedArmyGroupId) : null
     const counters = buildCounterDisplay(save, map, scale, {
-      selectedBattalionId: selectedBattalion?.id,
+      selectedBattalionId: selectedBattalionId ?? undefined,
       selectedCorpsId: selectedCorpsId ?? undefined,
       selectedCorpsIds: group ? getCorpsIdsInGroup(save, group) : undefined,
-      troopOverrides,
     })
+    lastCounterItems = counters
     drawCounterLayer(counterCanvas, map, counters)
   } else {
+    lastCounterItems = []
     const ctx = counterCanvas.getContext('2d')
     ctx?.clearRect(0, 0, counterCanvas.width, counterCanvas.height)
   }
@@ -282,8 +302,46 @@ function updatePanel(): void {
   corpsBar?.refresh()
   syncCorpsCommandBar()
 
-  if (!save || !selectedTileId || !map) {
-    panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块`
+  if (!save || !map) {
+    panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块或军棋`
+    panelArmyEl.textContent = '—'
+    recruitBtn.disabled = true
+    tuntianBtn.disabled = true
+    return
+  }
+
+  if (selectedBattalionId) {
+    const battalion = findBattalionById(save, selectedBattalionId)
+    if (!battalion) {
+      selectedBattalionId = undefined
+      updatePanel()
+      return
+    }
+    const tile = map.tileById[battalion.tileId]
+    const troops = countBattalionTroops(battalion)
+    const marchH = getMarchHoursLeft(battalion)
+    const combatH = getCombatHoursLeft(battalion)
+    const isPlayer = battalion.faction === pf
+
+    panelTileEl.textContent = tile
+      ? `${tile.name} · 军棋 ${battalion.designation}队${isPlayer ? ' · 己方' : ''}`
+      : `军棋 ${battalion.designation}队`
+    const parts = [`千人队 ×1 · ${troops}人`]
+    if (marchH !== undefined && battalion.targetTileId) {
+      const dest = map.tileById[battalion.targetTileId]?.name ?? battalion.targetTileId
+      parts.push(`→${dest}（${formatHoursBrief(marchH)}）`)
+    }
+    if (battalion.inCombat && combatH !== undefined) {
+      parts.push(`战（${formatHoursBrief(combatH)}）`)
+    }
+    panelArmyEl.textContent = parts.join(' · ')
+    recruitBtn.disabled = true
+    tuntianBtn.disabled = true
+    return
+  }
+
+  if (!selectedTileId) {
+    panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块或军棋`
     panelArmyEl.textContent = '—'
     recruitBtn.disabled = true
     tuntianBtn.disabled = true
@@ -383,6 +441,7 @@ async function startNewGame(faction: FactionId): Promise<void> {
   time?.setClock(0, 0)
   time?.resume()
   selectedTileId = undefined
+  selectedBattalionId = undefined
   selectedCorpsId = null
   selectedArmyGroupId = null
   corpsCommandBar?.hide()
@@ -626,7 +685,9 @@ function bindShell(): void {
       onStandbyLongPress: (corpsId) => {
         if (!save || !map) return
         const pf = playerFaction()
-        const battalion = getSelectedBattalionForCorpsOp(save, selectedTileId, pf)
+        const battalion = selectedBattalionId
+          ? findBattalionById(save, selectedBattalionId)
+          : getSelectedBattalionForCorpsOp(save, selectedTileId, pf)
         if (!battalion) {
           alerts.show('请先在地图上选中己方千人队', 'warn', 2500)
           return
@@ -834,24 +895,55 @@ function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
 }
 
 function onMapCommand(clientX: number, clientY: number): void {
-  if (!map || !save || mapLayer !== 'military') return
-  const tile = hitTestTile(canvas, map, clientX, clientY)
-  if (!tile || !selectedTileId) return
+  if (!map || !save || mapLayer !== 'military' || !selectedBattalionId) return
+  const battalion = findBattalionById(save, selectedBattalionId)
+  if (!battalion) return
 
+  const tile = hitTestTile(canvas, map, clientX, clientY)
+  if (!tile) return
+
+  const fromTileId = battalion.tileId
   if (
-    selectedTileId !== tile.id &&
-    map.tileById[selectedTileId]?.neighbors.includes(tile.id)
+    fromTileId !== tile.id &&
+    map.tileById[fromTileId]?.neighbors.includes(tile.id)
   ) {
-    tryMoveArmy(selectedTileId, tile.id)
+    tryMoveArmy(fromTileId, tile.id)
   }
 }
 
 function onMapTap(clientX: number, clientY: number): void {
   if (!map || !save) return
+
+  if (mapLayer === 'military' && lastCounterItems.length > 0) {
+    const counter = hitTestCounter(counterCanvas, map, lastCounterItems, clientX, clientY)
+    if (counter) {
+      selectedBattalionId = counter.battalionId
+      selectedTileId = undefined
+      selectedCorpsId = null
+      selectedArmyGroupId = null
+      corpsDetail?.hide()
+      armyGroupDetail?.hide()
+      corpsCommandBar?.hide()
+
+      const battalion = findBattalionById(save, counter.battalionId)
+      if (battalion) {
+        const tile = map.tileById[battalion.tileId]
+        logger.log(
+          'tile',
+          `选中军棋 ${battalion.designation}队 @${tile?.name ?? battalion.tileId}`,
+        )
+      }
+      updatePanel()
+      renderMap()
+      return
+    }
+  }
+
   const tile = hitTestTile(canvas, map, clientX, clientY)
   if (!tile) return
 
   selectedTileId = tile.id
+  selectedBattalionId = undefined
   const lines = formatTileSelect({
     tile,
     owner: save.tiles[tile.id]?.owner ?? 'neutral',
@@ -874,8 +966,9 @@ function bindUi(): void {
 
   mapViewportCtrl = bindMapViewport({
     viewport: mapViewport,
+    interactionRoot: mapStack,
     canvas: canvas!,
-    overlayCanvas: counterCanvas,
+    overlayElements: [labelLayer, counterCanvas],
     onTap: onMapTap,
     onLongPress: onMapCommand,
     onContextMenu: onMapCommand,
@@ -946,6 +1039,8 @@ function bindUi(): void {
     eventsPanelEl.textContent = '暂无'
     corpsDetail?.hide()
     battalionDetail?.hide()
+    selectedTileId = undefined
+    selectedBattalionId = undefined
     selectedCorpsId = null
     corpsCommandBar?.hide()
     time?.setClock(save.date, save.hour ?? 0)

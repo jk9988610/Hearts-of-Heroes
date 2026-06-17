@@ -57,11 +57,6 @@ function drawTerrainLayer(ctx: CanvasRenderingContext2D, map: GeneratedMap, layo
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(TERRAIN_LABELS[tile.type], px + cell / 2, py + cell / 2)
-
-    if (tile.isKeyCity) {
-      ctx.font = `${Math.max(8, cell * 0.16)}px "Noto Serif SC", serif`
-      ctx.fillText(tile.name, px + cell / 2, py + cell - 6)
-    }
   }
 }
 

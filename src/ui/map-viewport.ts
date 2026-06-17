@@ -6,9 +6,11 @@ const ZOOM_STEP = 0.1
 
 export interface MapViewportOptions {
   viewport: HTMLElement
+  /** 接收指针事件的容器（通常为 #map-stack） */
+  interactionRoot: HTMLElement
   canvas: HTMLCanvasElement
-  /** 与主图同尺寸的军棋层（可选） */
-  overlayCanvas?: HTMLCanvasElement
+  /** 与主图同尺寸的叠加层（军棋、地名等） */
+  overlayElements?: HTMLElement[]
   onTap: (clientX: number, clientY: number) => void
   /** 触屏长按，等价右键 */
   onLongPress?: (clientX: number, clientY: number) => void
@@ -22,8 +24,16 @@ export interface MapViewportController {
 
 /** 地图视口：拖拽滚动、滚轮/双指缩放、短按/长按/右键 */
 export function bindMapViewport(options: MapViewportOptions): MapViewportController {
-  const { viewport, canvas, overlayCanvas, onTap, onLongPress, onContextMenu, onScaleChange } =
-    options
+  const {
+    viewport,
+    interactionRoot,
+    canvas,
+    overlayElements = [],
+    onTap,
+    onLongPress,
+    onContextMenu,
+    onScaleChange,
+  } = options
   let pointerId: number | null = null
   let startX = 0
   let startY = 0
@@ -37,16 +47,16 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
   let pinchStartDist = 0
   let pinchStartScale = 1
 
-  canvas.style.touchAction = 'none'
+  interactionRoot.style.touchAction = 'none'
 
   function applyScale(): void {
     const w = `${canvas.width * scale}px`
     const h = `${canvas.height * scale}px`
     canvas.style.width = w
     canvas.style.height = h
-    if (overlayCanvas) {
-      overlayCanvas.style.width = w
-      overlayCanvas.style.height = h
+    for (const el of overlayElements) {
+      el.style.width = w
+      el.style.height = h
     }
     onScaleChange?.(scale)
   }
@@ -79,12 +89,12 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
     { passive: false },
   )
 
-  canvas.addEventListener('contextmenu', (e) => {
+  interactionRoot.addEventListener('contextmenu', (e) => {
     e.preventDefault()
     onContextMenu?.(e.clientX, e.clientY)
   })
 
-  canvas.addEventListener('pointerdown', (e) => {
+  interactionRoot.addEventListener('pointerdown', (e) => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
     if (pointers.size === 2) {
@@ -103,10 +113,10 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
     startScrollTop = viewport.scrollTop
     pointerDownMs = performance.now()
     dragging = false
-    canvas.setPointerCapture(e.pointerId)
+    interactionRoot.setPointerCapture(e.pointerId)
   })
 
-  canvas.addEventListener('pointermove', (e) => {
+  interactionRoot.addEventListener('pointermove', (e) => {
     if (pointers.has(e.pointerId)) {
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
     }
@@ -153,14 +163,14 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
     dragging = false
     pointerId = null
     try {
-      canvas.releasePointerCapture(e.pointerId)
+      interactionRoot.releasePointerCapture(e.pointerId)
     } catch {
       /* already released */
     }
   }
 
-  canvas.addEventListener('pointerup', endPointer)
-  canvas.addEventListener('pointercancel', endPointer)
+  interactionRoot.addEventListener('pointerup', endPointer)
+  interactionRoot.addEventListener('pointercancel', endPointer)
 
   return {
     getScale: () => scale,

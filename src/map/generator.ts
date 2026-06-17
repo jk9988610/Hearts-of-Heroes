@@ -269,14 +269,6 @@ export function drawMapPreview(
     const army = armyDisplay?.overlays[tile.id]
     const hasTroops = army && army.troops > 0
 
-    if (tile.isKeyCity) {
-      ctx.fillStyle = '#1a1208'
-      ctx.font = `${Math.max(10, cell * 0.22)}px "Noto Serif SC", serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(tile.name, px + cell / 2, py + cell / 2 - (hasTroops ? 8 : 0))
-    }
-
     if (army && !options?.skipUnitMarkers) {
       const markerR = Math.max(5, cell * 0.1)
       ctx.fillStyle = getFactionMarkerColor(army.faction)

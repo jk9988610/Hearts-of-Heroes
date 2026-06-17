@@ -90,6 +90,29 @@
         width: 600px;
         height: 600px;
       }
+      #label-layer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 600px;
+        height: 600px;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .map-city-label {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        color: #1a1208;
+        font-family: "Noto Serif SC", serif;
+        font-weight: 600;
+        white-space: nowrap;
+        text-shadow:
+          1px 1px 0 #f4efe4,
+          -1px -1px 0 #f4efe4,
+          1px -1px 0 #f4efe4,
+          -1px 1px 0 #f4efe4;
+        pointer-events: none;
+      }
       #counter-layer {
         position: absolute;
         left: 0;
@@ -98,6 +121,7 @@
         width: 600px;
         height: 600px;
         pointer-events: none;
+        z-index: 2;
       }
 
       #tile-float {
@@ -499,6 +523,7 @@
         <div id="map-viewport">
           <div id="map-stack">
             <canvas id="map" width="600" height="600"></canvas>
+            <div id="label-layer"></div>
             <canvas id="counter-layer" width="600" height="600"></canvas>
           </div>
         </div>

@@ -16,7 +16,8 @@ export interface CounterDisplayItem {
   tileId: string
   faction: FactionId
   designation: number
-  displayTroops: number
+  /** 显示的千人队（军队）数量，非兵力 */
+  displayBattalionCount: number
   hidden: boolean
   dugIn: boolean
   organization: number
@@ -24,6 +25,15 @@ export interface CounterDisplayItem {
   selected: boolean
   status?: string
   stackIndex: number
+}
+
+export interface CounterBounds {
+  battalionId: string
+  tileId: string
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 function aggregationKey(b: Battalion): string {
@@ -42,6 +52,60 @@ function areAdjacent(
   return Math.abs(a.gridX - b.gridX) + Math.abs(a.gridY - b.gridY) === 1
 }
 
+export function computeCounterBounds(
+  map: GeneratedMap,
+  layout: ReturnType<typeof getMapLayout>,
+  item: CounterDisplayItem,
+): CounterBounds | null {
+  const tile = map.tileById[item.tileId]
+  if (!tile) return null
+
+  const { cell, offsetX, offsetY } = layout
+  const px = offsetX + tile.gridX * cell
+  const py = offsetY + tile.gridY * cell
+
+  const w = Math.max(52, cell * 0.88)
+  const h = Math.max(22, cell * 0.32)
+  const stackOffset = item.stackIndex * (h + 2)
+  const x = px + (cell - w) / 2
+  const y = py + cell - h - 4 - stackOffset
+
+  return { battalionId: item.battalionId, tileId: item.tileId, x, y, w, h }
+}
+
+export function hitTestCounter(
+  canvas: HTMLCanvasElement,
+  map: GeneratedMap,
+  items: CounterDisplayItem[],
+  clientX: number,
+  clientY: number,
+): CounterDisplayItem | null {
+  const rect = canvas.getBoundingClientRect()
+  const scaleX = canvas.width / rect.width
+  const scaleY = canvas.height / rect.height
+  const x = (clientX - rect.left) * scaleX
+  const y = (clientY - rect.top) * scaleY
+
+  const layout = getMapLayout(canvas, map)
+  const visible = items.filter((i) => !i.hidden)
+
+  for (let i = visible.length - 1; i >= 0; i--) {
+    const item = visible[i]!
+    const bounds = computeCounterBounds(map, layout, item)
+    if (!bounds) continue
+    if (
+      x >= bounds.x &&
+      x <= bounds.x + bounds.w &&
+      y >= bounds.y &&
+      y <= bounds.y + bounds.h
+    ) {
+      return item
+    }
+  }
+
+  return null
+}
+
 export function buildCounterDisplay(
   save: GameSave,
   map: GeneratedMap,
@@ -50,7 +114,6 @@ export function buildCounterDisplay(
     selectedBattalionId?: string
     selectedCorpsId?: string
     selectedCorpsIds?: string[]
-    troopOverrides?: Record<string, number>
   } = {},
 ): CounterDisplayItem[] {
   const battalionById = new Map(listAllBattalions(save).map((b) => [b.id, b]))
@@ -71,7 +134,7 @@ export function buildCounterDisplay(
       tileId: displayTileId,
       faction: battalion.faction,
       designation: battalion.designation,
-      displayTroops: options.troopOverrides?.[displayTileId] ?? troops,
+      displayBattalionCount: 1,
       hidden: false,
       dugIn: Boolean(battalion.dugIn) && !isMarching,
       organization: org,
@@ -144,12 +207,12 @@ function aggregateAdjacentCounters(
     )
     let sum = 0
     for (const c of cluster) {
-      sum += c.displayTroops
+      sum += c.displayBattalionCount
       if (c.battalionId !== rep.battalionId) {
         c.hidden = true
       }
     }
-    rep.displayTroops = sum
+    rep.displayBattalionCount = sum
   }
 }
 
@@ -163,9 +226,10 @@ export function drawCounterLayer(
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
+  const layout = getMapLayout(canvas, map)
   for (const item of items) {
     if (item.hidden) continue
-    drawSingleCounter(ctx, map, getMapLayout(canvas, map), item)
+    drawSingleCounter(ctx, map, layout, item)
   }
 }
 
@@ -175,19 +239,10 @@ function drawSingleCounter(
   layout: ReturnType<typeof getMapLayout>,
   item: CounterDisplayItem,
 ): void {
-  const { cell, offsetX, offsetY } = layout
-  const tile = map.tileById[item.tileId]
-  if (!tile) return
+  const bounds = computeCounterBounds(map, layout, item)
+  if (!bounds) return
 
-  const px = offsetX + tile.gridX * cell
-  const py = offsetY + tile.gridY * cell
-
-  const w = Math.max(52, cell * 0.88)
-  const h = Math.max(22, cell * 0.32)
-  const stackOffset = item.stackIndex * (h + 2)
-  const x = px + (cell - w) / 2
-  const y = py + cell - h - 4 - stackOffset
-
+  const { x, y, w, h } = bounds
   const baseColor = getFactionMarkerColor(item.faction)
 
   ctx.fillStyle = baseColor
@@ -225,7 +280,7 @@ function drawSingleCounter(
   ctx.fillStyle = '#1a1208'
   ctx.font = `bold ${Math.max(9, h * 0.45)}px ui-monospace, monospace`
   ctx.textAlign = 'left'
-  ctx.fillText(String(item.displayTroops), midX, y + h * 0.38)
+  ctx.fillText(String(item.displayBattalionCount), midX, y + h * 0.38)
 
   drawBar(ctx, midX, y + h * 0.55, midW, h * 0.14, item.organization, '#4a7c59')
   drawBar(ctx, midX, y + h * 0.74, midW, h * 0.14, item.equipment, '#6a5a8a')

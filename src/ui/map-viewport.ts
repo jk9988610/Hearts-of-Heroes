@@ -1,4 +1,5 @@
 const DRAG_THRESHOLD_PX = 10
+const LONG_PRESS_MS = 500
 const MIN_SCALE = 0.65
 const MAX_SCALE = 2.5
 const ZOOM_STEP = 0.1
@@ -6,21 +7,29 @@ const ZOOM_STEP = 0.1
 export interface MapViewportOptions {
   viewport: HTMLElement
   canvas: HTMLCanvasElement
+  /** 与主图同尺寸的军棋层（可选） */
+  overlayCanvas?: HTMLCanvasElement
   onTap: (clientX: number, clientY: number) => void
+  /** 触屏长按，等价右键 */
+  onLongPress?: (clientX: number, clientY: number) => void
+  onContextMenu?: (clientX: number, clientY: number) => void
+  onScaleChange?: (scale: number) => void
 }
 
 export interface MapViewportController {
   getScale(): number
 }
 
-/** 地图视口：拖拽滚动、滚轮/双指缩放、区分点击 */
+/** 地图视口：拖拽滚动、滚轮/双指缩放、短按/长按/右键 */
 export function bindMapViewport(options: MapViewportOptions): MapViewportController {
-  const { viewport, canvas, onTap } = options
+  const { viewport, canvas, overlayCanvas, onTap, onLongPress, onContextMenu, onScaleChange } =
+    options
   let pointerId: number | null = null
   let startX = 0
   let startY = 0
   let startScrollLeft = 0
   let startScrollTop = 0
+  let pointerDownMs = 0
   let dragging = false
   let scale = 1
 
@@ -31,8 +40,15 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
   canvas.style.touchAction = 'none'
 
   function applyScale(): void {
-    canvas.style.width = `${canvas.width * scale}px`
-    canvas.style.height = `${canvas.height * scale}px`
+    const w = `${canvas.width * scale}px`
+    const h = `${canvas.height * scale}px`
+    canvas.style.width = w
+    canvas.style.height = h
+    if (overlayCanvas) {
+      overlayCanvas.style.width = w
+      overlayCanvas.style.height = h
+    }
+    onScaleChange?.(scale)
   }
 
   function zoomAt(clientX: number, clientY: number, newScale: number): void {
@@ -63,6 +79,11 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
     { passive: false },
   )
 
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault()
+    onContextMenu?.(e.clientX, e.clientY)
+  })
+
   canvas.addEventListener('pointerdown', (e) => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
@@ -80,6 +101,7 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
     startY = e.clientY
     startScrollLeft = viewport.scrollLeft
     startScrollTop = viewport.scrollTop
+    pointerDownMs = performance.now()
     dragging = false
     canvas.setPointerCapture(e.pointerId)
   })
@@ -121,7 +143,12 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
 
     if (pointerId !== e.pointerId) return
     if (!dragging) {
-      onTap(e.clientX, e.clientY)
+      const held = performance.now() - pointerDownMs
+      if (held >= LONG_PRESS_MS && onLongPress) {
+        onLongPress(e.clientX, e.clientY)
+      } else {
+        onTap(e.clientX, e.clientY)
+      }
     }
     dragging = false
     pointerId = null

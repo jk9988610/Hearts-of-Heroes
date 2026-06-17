@@ -13,6 +13,7 @@ import {
   splitTroopsIntoBattalionChunks,
 } from './organization/helpers.ts'
 import { ensureOrganizationTiles, migrateArmiesToOrganization } from './organization/migrate.ts'
+import { ensureBattalionDefaults } from './organization/corps-commands.ts'
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 
@@ -136,6 +137,7 @@ export function migrateSave(save: GameSave): GameSave {
 
   migrateArmiesToOrganization(save)
   ensureOrganizationTiles(save)
+  ensureBattalionDefaults(save)
 
   const totalBattalions = Object.values(save.factions).reduce(
     (n, f) => n + f.battalions.length,

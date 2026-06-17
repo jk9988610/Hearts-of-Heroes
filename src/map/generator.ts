@@ -189,6 +189,8 @@ function drawMarchArrows(
 export interface DrawMapPreviewOptions {
   troopOverrides?: Record<string, number>
   tileFlashes?: Record<string, TileFlash>
+  /** v0.85：军棋层绘制时跳过圆点兵力标记 */
+  skipUnitMarkers?: boolean
 }
 
 export function drawMapPreview(
@@ -275,7 +277,7 @@ export function drawMapPreview(
       ctx.fillText(tile.name, px + cell / 2, py + cell / 2 - (hasTroops ? 8 : 0))
     }
 
-    if (army) {
+    if (army && !options?.skipUnitMarkers) {
       const markerR = Math.max(5, cell * 0.1)
       ctx.fillStyle = getFactionMarkerColor(army.faction)
       ctx.beginPath()

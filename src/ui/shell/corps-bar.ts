@@ -13,6 +13,7 @@ export interface CorpsBarCallbacks {
   onStandbyLongPress: (corpsId: string) => void
   canCreateCorps: () => boolean
   getStandbyCorps: () => CorpsBarItem[]
+  getSelectedCorpsId: () => string | null
 }
 
 export class CorpsBar {
@@ -82,6 +83,9 @@ export class CorpsBar {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.className = 'corps-btn corps-btn-standby'
+    if (this.callbacks.getSelectedCorpsId() === corps.id) {
+      btn.classList.add('selected')
+    }
     btn.textContent = `${corps.label}\n@${corps.tileName}`
     btn.title = '单击详情 · 长按编入'
 

@@ -135,6 +135,7 @@ export function orderMarch(
   if (isBattalionUnderstrength(battalion)) {
     hours = Math.ceil(hours * 1.2)
   }
+  battalion.dugIn = false
   battalion.targetTileId = targetTileId
   battalion.marchHoursLeft = hours
   battalion.marchDaysLeft = undefined

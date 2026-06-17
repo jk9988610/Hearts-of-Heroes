@@ -4,9 +4,11 @@ import {
   DB_STORE,
   SAVE_KEY,
   SAVE_VERSION,
+  type Army,
   type FactionId,
   type GameSave,
 } from '../types/index.ts'
+import { HOURS_PER_DAY } from './time-scale.ts'
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 
@@ -57,6 +59,17 @@ export async function syncRemoteSave(_save: GameSave): Promise<boolean> {
   return false
 }
 
+function migrateArmyToHours(army: Army): void {
+  if (army.marchHoursLeft === undefined && army.marchDaysLeft !== undefined) {
+    army.marchHoursLeft = army.marchDaysLeft * HOURS_PER_DAY
+    delete army.marchDaysLeft
+  }
+  if (army.combatHoursLeft === undefined && army.combatDaysLeft !== undefined) {
+    army.combatHoursLeft = army.combatDaysLeft * HOURS_PER_DAY
+    delete army.combatDaysLeft
+  }
+}
+
 function addStarterArmies(save: GameSave): void {
   for (const { faction, tileId } of STARTER_CAPITALS) {
     const f = save.factions[faction]
@@ -94,6 +107,7 @@ export function createNewGame(
   const save: GameSave = {
     version: SAVE_VERSION,
     date: 0,
+    hour: 0,
     playerFaction,
     factions,
     tiles,
@@ -103,19 +117,24 @@ export function createNewGame(
   return save
 }
 
-/** 旧档迁移：补全初始军队 */
 export function migrateSave(save: GameSave): GameSave {
   if (!save.factions.wei) return save
+
+  if (save.hour === undefined) save.hour = 0
+  if (!save.playerFaction) save.playerFaction = 'wei'
+
+  for (const faction of Object.values(save.factions)) {
+    for (const army of faction.armies) {
+      migrateArmyToHours(army)
+    }
+  }
+
   const totalArmies = Object.values(save.factions).reduce(
     (n, f) => n + f.armies.length,
     0,
   )
-  if (totalArmies === 0) {
-    addStarterArmies(save)
-  }
-  if (!save.playerFaction) {
-    save.playerFaction = 'wei'
-  }
+  if (totalArmies === 0) addStarterArmies(save)
+
   save.version = SAVE_VERSION
   return save
 }

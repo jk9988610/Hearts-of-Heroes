@@ -1,5 +1,6 @@
 import type { FactionId, GameSave, GeneratedMap, MapTile, TileState } from '../types/index.ts'
-import { getFoodPolicyMultiplier } from '../core/policies.ts'
+import { getFoodPolicyMultiplier } from './policies.ts'
+import { HOURS_PER_DAY } from './time-scale.ts'
 
 const BASE_YIELD: Record<MapTile['type'], number> = {
   plain: 2,
@@ -8,6 +9,7 @@ const BASE_YIELD: Record<MapTile['type'], number> = {
 }
 
 export const ARMY_FOOD_PER_DAY = 0.5
+export const ARMY_FOOD_PER_HOUR = ARMY_FOOD_PER_DAY / HOURS_PER_DAY
 export const RECRUIT_COST = 20
 export const RECRUIT_TROOPS = 1000
 export const TUNTIAN_COST = 10
@@ -19,8 +21,9 @@ export function getTileFoodYield(tile: MapTile, tileState: TileState): number {
   return yield_
 }
 
-export function processEconomy(save: GameSave, map: GeneratedMap): void {
-  const yields: Partial<Record<FactionId, number>> = {
+/** 每小时经济结算 */
+export function processEconomyHour(save: GameSave, map: GeneratedMap, isNewDay: boolean): void {
+  const hourlyYields: Partial<Record<FactionId, number>> = {
     wei: 0,
     shu: 0,
     wu: 0,
@@ -30,16 +33,15 @@ export function processEconomy(save: GameSave, map: GeneratedMap): void {
     const state = save.tiles[tile.id]
     if (!state || state.owner === 'neutral') continue
 
-    yields[state.owner] =
-      (yields[state.owner] ?? 0) +
-      getTileFoodYield(tile, state) * getFoodPolicyMultiplier(save, state.owner)
+    const daily = getTileFoodYield(tile, state) * getFoodPolicyMultiplier(save, state.owner)
+    hourlyYields[state.owner] = (hourlyYields[state.owner] ?? 0) + daily / HOURS_PER_DAY
 
-    if (state.occupationDays !== undefined && state.occupationDays < 3) {
+    if (isNewDay && state.occupationDays !== undefined && state.occupationDays < 3) {
       state.occupationDays += 1
     }
   }
 
-  for (const [faction, amount] of Object.entries(yields)) {
+  for (const [faction, amount] of Object.entries(hourlyYields)) {
     if (save.factions[faction]) {
       save.factions[faction].food += amount ?? 0
     }
@@ -48,7 +50,7 @@ export function processEconomy(save: GameSave, map: GeneratedMap): void {
   for (const faction of Object.values(save.factions)) {
     const armyCount = faction.armies.length
     if (armyCount > 0) {
-      faction.food -= armyCount * ARMY_FOOD_PER_DAY
+      faction.food -= armyCount * ARMY_FOOD_PER_HOUR
     }
   }
 }

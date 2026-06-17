@@ -1,5 +1,11 @@
 import type { Army, FactionId, GameSave } from '../types/index.ts'
-import { findArmyOnTile, findMarchingArmyToTile } from '../core/combat.ts'
+import {
+  findArmyOnTile,
+  findMarchingArmyToTile,
+  getCombatHoursLeft,
+  getMarchHoursLeft,
+} from '../core/combat.ts'
+import { formatHoursBrief } from '../core/time-scale.ts'
 
 export type ArmyDisplayKind = 'garrison' | 'marching-in' | 'marching-out' | 'combat'
 
@@ -33,15 +39,16 @@ export function getFactionMarkerColor(faction: FactionId): string {
   return FACTION_MARKER[faction] ?? FACTION_MARKER.neutral
 }
 
-/** 构建地图驻军/行军可视化数据 */
 export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
   const overlays: Record<string, ArmyOverlay> = {}
   const arrows: MarchArrow[] = []
 
   for (const faction of Object.values(save.factions)) {
     for (const army of faction.armies) {
-      if (army.marchDaysLeft && army.targetTileId) {
-        const days = army.marchDaysLeft
+      const marchH = getMarchHoursLeft(army)
+      const combatH = getCombatHoursLeft(army)
+
+      if (marchH !== undefined && marchH > 0 && army.targetTileId) {
         const target = army.targetTileId
         const from = army.tileId
 
@@ -49,14 +56,14 @@ export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
           fromTileId: from,
           toTileId: target,
           faction: army.faction,
-          label: `行${days}`,
+          label: formatHoursBrief(marchH),
         })
 
         overlays[target] = {
           troops: army.troops,
           faction: army.faction,
           kind: 'marching-in',
-          status: `→${days}天`,
+          status: `→${formatHoursBrief(marchH)}`,
         }
 
         overlays[from] = {
@@ -65,12 +72,12 @@ export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
           kind: 'marching-out',
           status: '出发',
         }
-      } else if (army.inCombat) {
+      } else if (army.inCombat && combatH !== undefined) {
         overlays[army.tileId] = {
           troops: army.troops,
           faction: army.faction,
           kind: 'combat',
-          status: `战${army.combatDaysLeft ?? 0}`,
+          status: `战${formatHoursBrief(combatH)}`,
         }
       } else {
         overlays[army.tileId] = {

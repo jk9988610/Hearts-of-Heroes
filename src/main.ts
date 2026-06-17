@@ -17,8 +17,14 @@ import {
   migrateSave,
   saveGame,
 } from './core/save.ts'
-import { gameTick, playerCanAct } from './core/game.ts'
-import { MARCH_DAYS, findArmyOnTile, orderMarch } from './core/combat.ts'
+import { gameHourTick, playerCanAct } from './core/game.ts'
+import {
+  findArmyOnTile,
+  getCombatHoursLeft,
+  getMarchHoursLeft,
+  MARCH_HOURS,
+  orderMarch,
+} from './core/combat.ts'
 import {
   buildTuntian,
   canBuildTuntian,
@@ -29,12 +35,13 @@ import {
 import {
   activatePolicy,
   canActivatePolicy,
-  getMarchDays,
   loadPoliciesConfig,
 } from './core/policies.ts'
 import { checkVictory, getPlayerStatusHints } from './core/victory.ts'
 import { LOCAL_VERSION } from './core/version.ts'
 import { getFactionLabel, PLAYABLE_FACTIONS } from './core/factions.ts'
+import { formatGameTime, formatHoursBrief } from './core/time-scale.ts'
+import { getVisibleTileIds } from './core/visibility.ts'
 import { DebugLogger } from './ui/debug.ts'
 import { bindDebugToolbar, logTickEvents } from './ui/debug-toolbar.ts'
 import { buildGameSnapshot, formatTileSelect } from './ui/debug-reports.ts'
@@ -69,12 +76,13 @@ function updateStatus(): void {
   const pf = playerFaction()
   const paused = time.isPaused() ? '已暂停' : '运行中'
   const food = save.factions[pf]?.food ?? 0
+  const clock = time.getClock()
   const keys = map
     ? Object.values(map.tileById).filter(
         (t) => t.isKeyCity && save!.tiles[t.id]?.owner === pf,
       ).length
     : 0
-  statusEl.textContent = `第 ${save.date} 天 · ${getFactionLabel(pf)} · ${paused} · ×${time.getSpeed()} · 粮${food.toFixed(0)} · 关键城${keys}/6`
+  statusEl.textContent = `${formatGameTime(clock.day, clock.hour)} · ${getFactionLabel(pf)} · ${paused} · ×${time.getSpeed()} · 粮${food.toFixed(0)} · 城${keys}/6`
 }
 
 function getNeighborTiles(tile: MapTile): MapTile[] {
@@ -164,7 +172,7 @@ function updatePanel(): void {
   const lines = [
     `${tile.name} · ${getFactionLabel(state.owner as FactionId)}`,
     army
-      ? `驻军 ${army.troops}${army.marchDaysLeft ? ` · 行→${army.targetTileId}(${army.marchDaysLeft}天)` : ''}${army.inCombat ? ` · 战${army.combatDaysLeft}天` : ''}`
+      ? `驻军 ${army.troops}${(() => { const mh = getMarchHoursLeft(army); return mh && army.targetTileId ? ` · 行→${army.targetTileId}(${formatHoursBrief(mh)})` : '' })()}${army.inCombat ? ` · 战${formatHoursBrief(getCombatHoursLeft(army) ?? 0)}` : ''}`
       : '无驻军',
     isPlayer ? '己方 · 点邻格调兵' : '非己方',
   ]
@@ -227,7 +235,7 @@ async function startNewGame(): Promise<void> {
   }
   save = createNewGame(owners, heroIdsByFaction, pendingFaction)
   await saveGame(save)
-  time?.setGameDay(0)
+  time?.setClock(0, 0)
   time?.resume()
   selectedTileId = undefined
   syncFactionButtons()
@@ -268,21 +276,38 @@ async function bootstrap(): Promise<void> {
   }
 
   time = new TimeController({
-    onTick: (day) => {
+    onHourTick: (clock) => {
       if (!save || !map || gameEnded) return
-      save.date = day
 
-      const events = gameTick(save, map)
+      const visible = getVisibleTileIds(map, canvas!, {
+        scrollLeft: mapViewport.scrollLeft,
+        scrollTop: mapViewport.scrollTop,
+        clientWidth: mapViewport.clientWidth,
+        clientHeight: mapViewport.clientHeight,
+      })
+
+      const events = gameHourTick(save, map, {
+        playerFaction: playerFaction(),
+        visibleTileIds: visible,
+        clock,
+      })
+
       logTickEvents(logger, {
-        day,
-        ai: events.ai,
+        day: clock.day,
+        hour: clock.hour,
+        ai: events.ai.map((a) => ({
+          faction: a.faction,
+          type: a.type,
+          detail: a.detail,
+          mode: a.mode,
+        })),
         marches: events.marches,
         battles: events.battles,
       })
 
       updateAlertsFromTick(events.battles)
 
-      if (day % 10 === 0) void saveGame(save)
+      if (clock.hour === 0 && clock.day % 5 === 0) void saveGame(save)
 
       handleVictory()
       updateStatus()
@@ -294,7 +319,7 @@ async function bootstrap(): Promise<void> {
       updateStatus()
     },
   })
-  time.setGameDay(save!.date)
+  time.setClock(save!.date, save!.hour ?? 0)
   time.start()
 
   bindUi()
@@ -302,7 +327,7 @@ async function bootstrap(): Promise<void> {
   updateStatus()
   updatePanel()
   renderMap()
-  logger.log('system', `就绪 v${LOCAL_VERSION.version}`)
+  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 小时制Tick · 玩家操控己方 AI视距优化`)
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
@@ -319,16 +344,16 @@ function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
     logger.log('system', '该地块无可用己方驻军')
     return false
   }
-  if (army.inCombat || army.marchDaysLeft) {
+  if (army.inCombat || getMarchHoursLeft(army)) {
     logger.log('system', '军队行军中或战斗中')
     return false
   }
 
-  const days = getMarchDays(save, pf, MARCH_DAYS)
-  if (orderMarch(army, toTileId, days)) {
+  if (orderMarch(save, army, toTileId, MARCH_HOURS)) {
     const dest = map.tileById[toTileId]?.name ?? toTileId
-    logger.log('battle', `${getFactionLabel(pf)}军 ${fromTile.name} → ${dest}（${days}天）`)
-    alerts.show(`军队前往 ${dest}，${days} 天后抵达`, 'info', 4000)
+    const hours = getMarchHoursLeft(army)!
+    logger.log('battle', `${getFactionLabel(pf)}军 ${fromTile.name} → ${dest}（${formatHoursBrief(hours)}）`)
+    alerts.show(`军队前往 ${dest}，${formatHoursBrief(hours)}后抵达`, 'info', 4000)
     updatePanel()
     renderMap()
     return true
@@ -448,7 +473,7 @@ function bindUi(): void {
     save = migrateSave(loaded)
     pendingFaction = save.playerFaction
     gameEnded = false
-    time?.setGameDay(save.date)
+    time?.setClock(save.date, save.hour ?? 0)
     time?.resume()
     syncFactionButtons()
     logger.log('system', `读档 第${save.date}天`)

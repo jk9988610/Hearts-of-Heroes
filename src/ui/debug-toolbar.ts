@@ -7,7 +7,6 @@ import {
   fetchRemoteVersion,
 } from '../core/version.ts'
 
-/** 将 gameTick 事件写入日志（统一入口） */
 export function logTickEvents(logger: DebugLogger, input: TickLogInput): void {
   const { tick, battle } = formatTickEvents(input)
   if (tick) logger.log('tick', tick)
@@ -21,7 +20,6 @@ async function runVersionCheck(logger: DebugLogger): Promise<void> {
   logger.report('debug', '版本检查', lines)
 }
 
-/** 绑定调试工具栏按钮 */
 export function bindDebugToolbar(
   logger: DebugLogger,
   options: {
@@ -35,17 +33,12 @@ export function bindDebugToolbar(
   const versionBtn = document.querySelector<HTMLButtonElement>('#btn-version-check')
 
   clearBtn?.addEventListener('click', () => logger.clear())
-
   dumpBtn?.addEventListener('click', () => options.onDump())
-
   copyBtn?.addEventListener('click', async () => {
     const ok = await logger.copyVisible()
     logger.log('system', ok ? '已复制当前可见日志' : '复制失败：无可见日志')
   })
-
-  versionBtn?.addEventListener('click', () => {
-    void runVersionCheck(logger)
-  })
+  versionBtn?.addEventListener('click', () => void runVersionCheck(logger))
 
   document.querySelectorAll<HTMLButtonElement>(options.filterButtonSelector).forEach((btn) => {
     const category = btn.dataset.filter as LogCategory | undefined

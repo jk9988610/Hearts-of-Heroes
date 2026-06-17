@@ -45,9 +45,14 @@ export function getDefensePolicyMultiplier(save: GameSave, faction: FactionId): 
   return 1
 }
 
-export function getMarchDays(save: GameSave, faction: FactionId, baseDays: number): number {
+export function getMarchHours(save: GameSave, faction: FactionId, baseHours: number): number {
   if (hasPolicy(save, faction, 'fast_march')) {
-    return Math.max(1, Math.floor(baseDays * 0.5))
+    return Math.max(1, Math.floor(baseHours * 0.5))
   }
-  return baseDays
+  return baseHours
+}
+
+/** @deprecated 使用 getMarchHours */
+export function getMarchDays(save: GameSave, faction: FactionId, baseDays: number): number {
+  return Math.max(1, Math.ceil(getMarchHours(save, faction, baseDays * 24) / 24))
 }

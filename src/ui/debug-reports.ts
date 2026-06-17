@@ -1,8 +1,13 @@
 import type { Army, FactionId, GameSave, GeneratedMap, MapTile } from '../types/index.ts'
-import { findArmyOnTile } from '../core/combat.ts'
+import {
+  findArmyOnTile,
+  getCombatHoursLeft,
+  getMarchHoursLeft,
+} from '../core/combat.ts'
 import { listAllArmies } from '../map/army-display.ts'
 import { LOCAL_VERSION } from '../core/version.ts'
 import { getFactionLabel } from '../core/factions.ts'
+import { formatGameTime, formatHoursBrief } from '../core/time-scale.ts'
 
 export interface GameReportContext {
   save: GameSave
@@ -16,20 +21,23 @@ export interface GameReportContext {
 function formatArmy(army: Army | null): string {
   if (!army) return '无'
   const parts = [`${army.troops}兵 @${army.tileId}`]
-  if (army.marchDaysLeft && army.targetTileId) {
-    parts.push(`行军→${army.targetTileId} 剩${army.marchDaysLeft}天`)
+  const marchH = getMarchHoursLeft(army)
+  if (marchH !== undefined && army.targetTileId) {
+    parts.push(`行军→${army.targetTileId} 剩${formatHoursBrief(marchH)}`)
   }
-  if (army.inCombat) parts.push(`战斗剩${army.combatDaysLeft ?? 0}天`)
+  const combatH = getCombatHoursLeft(army)
+  if (army.inCombat && combatH !== undefined) {
+    parts.push(`战斗剩${formatHoursBrief(combatH)}`)
+  }
   return parts.join(' · ')
 }
 
-/** 游戏状态快照（供「打印详情」与复制） */
 export function buildGameSnapshot(ctx: GameReportContext): string[] {
   const { save, map, playerFaction, selectedTileId, getNeighborTiles, formatTileBrief } =
     ctx
 
   const lines: string[] = [
-    `游戏日: ${save.date}`,
+    `时间: ${formatGameTime(save.date, save.hour ?? 0)}`,
     `存档版本: ${save.version}`,
     `客户端: ${LOCAL_VERSION.version} (${LOCAL_VERSION.buildTime})`,
     `操控势力: ${playerFaction} (${getFactionLabel(playerFaction)})`,
@@ -50,7 +58,7 @@ export function buildGameSnapshot(ctx: GameReportContext): string[] {
       `地形: ${tile.type}`,
       `归属: ${state?.owner ?? 'neutral'}`,
       `屯田: ${state?.hasTuntian ? '是' : '否'}`,
-      `驻军(逻辑格): ${formatArmy(army)}`,
+      `驻军: ${formatArmy(army)}`,
       `邻接(${neighbors.length}): ${neighbors.map(formatTileBrief).join('、') || '无'}`,
     )
   } else {
@@ -75,24 +83,31 @@ export function buildGameSnapshot(ctx: GameReportContext): string[] {
 
 export interface TickLogInput {
   day: number
-  ai?: { faction: string; type: string; detail: string }
+  hour: number
+  ai: { faction: string; type: string; detail: string; mode?: string }[]
   marches: string[]
   battles: string[]
 }
 
-/** 将 Tick 事件转为统一日志条目描述 */
 export function formatTickEvents(input: TickLogInput): {
   tick?: string
   battle: string[]
 } {
   const battle: string[] = []
 
-  if (input.ai && input.ai.type !== 'idle') {
-    battle.push(`AI[${input.ai.faction}] ${input.ai.type}: ${input.ai.detail}`)
+  for (const ai of input.ai) {
+    const tag = ai.mode === 'lite' ? '[简]' : ''
+    battle.push(`AI${tag}[${ai.faction}] ${ai.type}: ${ai.detail}`)
   }
   battle.push(...input.marches, ...input.battles)
 
-  const tick = input.day % 5 === 0 ? `第 ${input.day} 天` : undefined
+  const tick =
+    input.hour === 0
+      ? formatGameTime(input.day, 0)
+      : input.hour % 6 === 0
+        ? formatGameTime(input.day, input.hour)
+        : undefined
+
   return { tick, battle }
 }
 
@@ -104,12 +119,12 @@ export interface TileSelectInfo {
   formatTileBrief: (tile: MapTile) => string
 }
 
-/** 地块选中日志 */
 export function formatTileSelect(info: TileSelectInfo): string[] {
   const { tile, owner, army, neighbors, formatTileBrief } = info
+  const marchH = army ? getMarchHoursLeft(army) : undefined
   const marchHint =
-    army?.marchDaysLeft && army.targetTileId
-      ? ` 行→${army.targetTileId}(${army.marchDaysLeft}天)`
+    marchH !== undefined && army?.targetTileId
+      ? ` 行→${army.targetTileId}(${formatHoursBrief(marchH)})`
       : ''
   return [
     `选中 ${tile.name}(${tile.gridX},${tile.gridY}) 归属=${owner}${army ? ` 兵${army.troops}${marchHint}` : ''}`,

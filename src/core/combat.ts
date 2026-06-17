@@ -1,9 +1,7 @@
 import type { Army, FactionId, GameSave, TerrainType } from '../types/index.ts'
 import { markTileCaptured } from './economy.ts'
-import { getDefensePolicyMultiplier } from './policies.ts'
-
-export const MARCH_DAYS = 2
-export const COMBAT_DAYS = 3
+import { getDefensePolicyMultiplier, getMarchHours } from './policies.ts'
+import { COMBAT_HOURS, MARCH_HOURS } from './time-scale.ts'
 
 const UNIT_ATK = 1.0
 const UNIT_DEF = 1.2
@@ -13,6 +11,8 @@ const TERRAIN_MOD: Record<TerrainType, { atk: number; def: number }> = {
   mountain: { atk: 0.8, def: 1.2 },
   river: { atk: 0.9, def: 1.0 },
 }
+
+export { MARCH_HOURS, COMBAT_HOURS }
 
 export function calcCombatPower(
   troops: number,
@@ -59,18 +59,20 @@ export function resolveBattle(
 export function startCombat(attacker: Army, defender: Army): void {
   attacker.inCombat = true
   defender.inCombat = true
-  attacker.combatDaysLeft = COMBAT_DAYS
-  defender.combatDaysLeft = COMBAT_DAYS
+  attacker.combatHoursLeft = COMBAT_HOURS
+  defender.combatHoursLeft = COMBAT_HOURS
   attacker.targetTileId = defender.tileId
 }
 
 export function clearArmyMarch(army: Army): void {
   army.targetTileId = undefined
+  army.marchHoursLeft = undefined
   army.marchDaysLeft = undefined
 }
 
 export function clearArmyCombat(army: Army): void {
   army.inCombat = false
+  army.combatHoursLeft = undefined
   army.combatDaysLeft = undefined
   army.targetTileId = undefined
 }
@@ -95,7 +97,9 @@ export function syncArmyTile(save: GameSave, army: Army, tileId: string): void {
 
 export function findArmyOnTile(save: GameSave, tileId: string): Army | null {
   for (const faction of Object.values(save.factions)) {
-    const army = faction.armies.find((a) => a.tileId === tileId && !a.marchDaysLeft)
+    const army = faction.armies.find(
+      (a) => a.tileId === tileId && !a.marchHoursLeft && !a.marchDaysLeft,
+    )
     if (army) return army
   }
   return null
@@ -104,21 +108,42 @@ export function findArmyOnTile(save: GameSave, tileId: string): Army | null {
 export function findMarchingArmyToTile(save: GameSave, tileId: string): Army | null {
   for (const faction of Object.values(save.factions)) {
     const army = faction.armies.find(
-      (a) => a.targetTileId === tileId && a.marchDaysLeft !== undefined,
+      (a) =>
+        a.targetTileId === tileId &&
+        (a.marchHoursLeft !== undefined || a.marchDaysLeft !== undefined),
     )
     if (army) return army
   }
   return null
 }
 
+export function getMarchHoursLeft(army: Army): number | undefined {
+  if (army.marchHoursLeft !== undefined) return army.marchHoursLeft
+  if (army.marchDaysLeft !== undefined) return army.marchDaysLeft * 24
+  return undefined
+}
+
+export function getCombatHoursLeft(army: Army): number | undefined {
+  if (army.combatHoursLeft !== undefined) return army.combatHoursLeft
+  if (army.combatDaysLeft !== undefined) return army.combatDaysLeft * 24
+  return undefined
+}
+
 export function totalFactionTroops(save: GameSave, faction: FactionId): number {
   return (save.factions[faction]?.armies ?? []).reduce((s, a) => s + a.troops, 0)
 }
 
-export function orderMarch(army: Army, targetTileId: string, days = MARCH_DAYS): boolean {
-  if (army.inCombat || army.marchDaysLeft) return false
+export function orderMarch(
+  save: GameSave,
+  army: Army,
+  targetTileId: string,
+  baseHours = MARCH_HOURS,
+): boolean {
+  if (army.inCombat || getMarchHoursLeft(army)) return false
+  const hours = getMarchHours(save, army.faction, baseHours)
   army.targetTileId = targetTileId
-  army.marchDaysLeft = days
+  army.marchHoursLeft = hours
+  army.marchDaysLeft = undefined
   return true
 }
 

@@ -2,62 +2,103 @@ import type { Army, FactionId, GameSave, GeneratedMap } from '../types/index.ts'
 import { runAiTurn, type AiAction } from './ai.ts'
 import {
   applyBattleOutcome,
-  COMBAT_DAYS,
+  COMBAT_HOURS,
   findArmyOnTile,
   finishMarch,
+  getCombatHoursLeft,
+  getMarchHoursLeft,
 } from './combat.ts'
-import { processEconomy } from './economy.ts'
+import { processEconomyHour } from './economy.ts'
+import { isArmyEventVisible, isFactionInView } from './visibility.ts'
+import type { GameClock } from './time-scale.ts'
+import { AI_LITE_INTERVAL_HOURS } from './time-scale.ts'
+
+export interface TickContext {
+  playerFaction: FactionId
+  visibleTileIds: Set<string>
+  clock: GameClock
+}
 
 export interface TickEvents {
-  ai?: AiAction
+  ai: AiAction[]
   marches: string[]
   battles: string[]
 }
 
-export function gameTick(save: GameSave, map: GeneratedMap): TickEvents {
-  const events: TickEvents = { marches: [], battles: [] }
+export function gameHourTick(
+  save: GameSave,
+  map: GeneratedMap,
+  ctx: TickContext,
+): TickEvents {
+  const events: TickEvents = { ai: [], marches: [], battles: [] }
+  const isNewDay = ctx.clock.hour === 0
 
-  processEconomy(save, map)
-  processMarching(save, map, events)
-  processCombat(save, map, events)
+  save.date = ctx.clock.day
+  save.hour = ctx.clock.hour
 
-  const ai = runAiTurn(save, map, save.date)
-  events.ai = ai
+  processEconomyHour(save, map, isNewDay)
+  processMarching(save, map, ctx, events)
+  processCombat(save, map, ctx, events)
+
+  const aiActions = runAiTurn(
+    save,
+    map,
+    ctx.playerFaction,
+    ctx.clock.hour,
+    (faction) => isFactionInView(save, faction, ctx.visibleTileIds),
+    AI_LITE_INTERVAL_HOURS,
+  )
+  events.ai = aiActions
 
   return events
 }
 
-function processMarching(save: GameSave, map: GeneratedMap, events: TickEvents): void {
+function processMarching(
+  save: GameSave,
+  map: GeneratedMap,
+  ctx: TickContext,
+  events: TickEvents,
+): void {
   const marching: Army[] = []
   for (const faction of Object.values(save.factions)) {
     for (const army of faction.armies) {
-      if (army.marchDaysLeft !== undefined && army.marchDaysLeft > 0) {
-        marching.push(army)
-      }
+      const left = getMarchHoursLeft(army)
+      if (left !== undefined && left > 0) marching.push(army)
     }
   }
 
   for (const army of marching) {
     if (army.inCombat) continue
-    army.marchDaysLeft = (army.marchDaysLeft ?? 1) - 1
+    const left = (getMarchHoursLeft(army) ?? 1) - 1
+    army.marchHoursLeft = left
+    army.marchDaysLeft = undefined
 
-    if (army.marchDaysLeft <= 0 && army.targetTileId) {
+    if (left <= 0 && army.targetTileId) {
       const target = army.targetTileId
       const terrain = map.tileById[target]?.type ?? 'plain'
       const result = finishMarch(save, army, target, terrain)
+      const tileName = map.tileById[target]?.name ?? target
+      const emit = isArmyEventVisible(army, ctx.visibleTileIds, ctx.playerFaction)
+
+      if (!emit) continue
 
       if (result.type === 'combat') {
-        events.marches.push(`${army.faction} 抵达 ${target}，进入战斗`)
+        events.marches.push(`${army.faction} 抵达 ${tileName}，进入战斗`)
       } else if (result.type === 'merge') {
-        events.marches.push(`${army.faction} 抵达 ${target}，合兵`)
+        events.marches.push(`${army.faction} 抵达 ${tileName}，合兵`)
       } else {
-        events.marches.push(`${army.faction} 抵达 ${target}`)
+        events.marches.push(`${army.faction} 抵达 ${tileName}`)
       }
     }
   }
 }
 
-function processCombat(save: GameSave, map: GeneratedMap, events: TickEvents): void {
+function processCombat(
+  save: GameSave,
+  map: GeneratedMap,
+  ctx: TickContext,
+  events: TickEvents,
+): void {
   const byTile = new Map<string, Army[]>()
 
   for (const faction of Object.values(save.factions)) {
@@ -73,6 +114,7 @@ function processCombat(save: GameSave, map: GeneratedMap, events: TickEvents): v
     if (armies.length < 2) {
       for (const army of armies) {
         army.inCombat = false
+        army.combatHoursLeft = undefined
         army.combatDaysLeft = undefined
       }
       continue
@@ -85,15 +127,22 @@ function processCombat(save: GameSave, map: GeneratedMap, events: TickEvents): v
     const defender = armies.find((a) => a.faction !== attacker.faction && a.id !== attacker.id)
     if (!defender) continue
 
-    const daysLeft = (attacker.combatDaysLeft ?? COMBAT_DAYS) - 1
-    attacker.combatDaysLeft = daysLeft
-    defender.combatDaysLeft = daysLeft
+    const hoursLeft = (getCombatHoursLeft(attacker) ?? COMBAT_HOURS) - 1
+    attacker.combatHoursLeft = hoursLeft
+    defender.combatHoursLeft = hoursLeft
+    attacker.combatDaysLeft = undefined
+    defender.combatDaysLeft = undefined
 
-    if (daysLeft > 0) continue
+    if (hoursLeft > 0) continue
 
     const terrain = map.tileById[tileId]?.type ?? 'plain'
     const result = applyBattleOutcome(save, attacker, defender, terrain)
     const tileName = map.tileById[tileId]?.name ?? tileId
+
+    const emit =
+      isArmyEventVisible(attacker, ctx.visibleTileIds, ctx.playerFaction) ||
+      isArmyEventVisible(defender, ctx.visibleTileIds, ctx.playerFaction)
+    if (!emit) continue
 
     if (result.attackerWins || defender.troops <= 0) {
       events.battles.push(
@@ -115,25 +164,4 @@ export function getArmyOnTile(save: GameSave, tileId: string): Army | null {
 
 export function playerCanAct(save: GameSave, tileId: string, player: FactionId): boolean {
   return save.tiles[tileId]?.owner === player
-}
-
-export function ensureStarterArmies(
-  save: GameSave,
-  capitals: Record<string, { faction: FactionId; tileId: string }>,
-): void {
-  for (const { faction, tileId } of Object.values(capitals)) {
-    const f = save.factions[faction]
-    if (!f) continue
-    const armyId = `army_${faction}_${tileId}`
-    const exists = f.armies.some((a) => a.id === armyId)
-    if (exists) continue
-
-    f.armies.push({
-      id: armyId,
-      faction,
-      troops: 1500,
-      tileId,
-    })
-    save.tiles[tileId]!.armyId = armyId
-  }
 }

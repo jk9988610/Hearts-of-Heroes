@@ -41,8 +41,13 @@ export interface Army {
   troops: number
   tileId: string
   targetTileId?: string
-  marchDaysLeft?: number
+  /** 剩余行军小时数 */
+  marchHoursLeft?: number
   inCombat?: boolean
+  /** 剩余战斗小时数 */
+  combatHoursLeft?: number
+  /** @deprecated 旧档字段，迁移后删除 */
+  marchDaysLeft?: number
   combatDaysLeft?: number
 }
 
@@ -64,6 +69,7 @@ export interface FactionState {
 export interface GameSave {
   version: string
   date: number
+  hour: number
   playerFaction: FactionId
   factions: Record<string, FactionState>
   tiles: Record<string, TileState>
@@ -87,7 +93,7 @@ export interface GeneratedMap {
   tileById: Record<string, MapTile>
 }
 
-export const SAVE_VERSION = '0.4.1'
+export const SAVE_VERSION = '0.5.0'
 export const DB_NAME = 'sanguo-save'
 export const DB_STORE = 'saves'
 export const SAVE_KEY = 'sanguo-save-v1'

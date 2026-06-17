@@ -4,7 +4,6 @@ import { getFactionLabel } from '../core/factions.ts'
 import { getMarchHoursLeft } from '../core/combat.ts'
 import {
   countBattalionTroops,
-  isBattalionUnderstrength,
 } from '../core/organization/helpers.ts'
 import { listAllBattalions } from '../core/organization/queries.ts'
 import { getMapLayout } from './generator.ts'
@@ -69,9 +68,7 @@ export function getCounterStance(
 }
 
 function aggregationKey(b: Battalion): string {
-  const understrength = isBattalionUnderstrength(b) ? 'u' : 'f'
-  // 同势力同兵种即可聚合（不要求同番号/同将军队）
-  return `${b.faction}|${UNIT_TYPE_ICON}|${understrength}`
+  return `${b.faction}|${UNIT_TYPE_ICON}`
 }
 
 function gridDistance(

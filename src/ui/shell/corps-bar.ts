@@ -1,25 +1,23 @@
 const COLS_PER_ROW = 4
 const LONG_PRESS_MS = 500
 
-export interface StandbyCorps {
+export interface CorpsBarItem {
   id: string
   label: string
   tileName: string
 }
 
 export interface CorpsBarCallbacks {
-  onNewCorps: (tileName: string) => void
-  onStandbyClick: (corps: StandbyCorps) => void
-  onStandbyLongPress: (corps: StandbyCorps) => void
+  onNewCorps: () => void
+  onStandbyClick: (corpsId: string) => void
+  onStandbyLongPress: (corpsId: string) => void
   canCreateCorps: () => boolean
-  getSelectedTileName: () => string | null
+  getStandbyCorps: () => CorpsBarItem[]
 }
 
 export class CorpsBar {
   private readonly gridEl: HTMLElement
   private readonly callbacks: CorpsBarCallbacks
-  private standby: StandbyCorps[] = []
-  private nextId = 1
   private longPressTimer: ReturnType<typeof setTimeout> | null = null
   private longPressFired = false
 
@@ -29,25 +27,12 @@ export class CorpsBar {
     this.render()
   }
 
-  addStandby(tileName: string): void {
-    const id = `standby_${this.nextId++}`
-    this.standby.push({
-      id,
-      label: `将军队·待命${this.standby.length + 1}`,
-      tileName,
-    })
-    this.render()
-  }
-
-  getStandbyList(): StandbyCorps[] {
-    return [...this.standby]
-  }
-
   private render(): void {
+    const standby = this.callbacks.getStandbyCorps()
     this.gridEl.innerHTML = ''
-    const rows: StandbyCorps[][] = []
-    for (let i = 0; i < this.standby.length; i += COLS_PER_ROW) {
-      rows.push(this.standby.slice(i, i + COLS_PER_ROW))
+    const rows: CorpsBarItem[][] = []
+    for (let i = 0; i < standby.length; i += COLS_PER_ROW) {
+      rows.push(standby.slice(i, i + COLS_PER_ROW))
     }
 
     const lastRow = rows[rows.length - 1]
@@ -87,27 +72,25 @@ export class CorpsBar {
     btn.textContent = '新编军队'
     btn.disabled = !this.callbacks.canCreateCorps()
     btn.addEventListener('click', () => {
-      const name = this.callbacks.getSelectedTileName()
-      if (!name) return
-      this.callbacks.onNewCorps(name)
-      this.addStandby(name)
+      if (!this.callbacks.canCreateCorps()) return
+      this.callbacks.onNewCorps()
     })
     return btn
   }
 
-  private createStandbyBtn(corps: StandbyCorps): HTMLButtonElement {
+  private createStandbyBtn(corps: CorpsBarItem): HTMLButtonElement {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.className = 'corps-btn corps-btn-standby'
     btn.textContent = `${corps.label}\n@${corps.tileName}`
-    btn.title = '单击详情 · 长按编入（v0.8）'
+    btn.title = '单击详情 · 长按编入'
 
     btn.addEventListener('click', () => {
       if (this.longPressFired) {
         this.longPressFired = false
         return
       }
-      this.callbacks.onStandbyClick(corps)
+      this.callbacks.onStandbyClick(corps.id)
     })
 
     btn.addEventListener('pointerdown', () => {
@@ -115,7 +98,7 @@ export class CorpsBar {
       this.longPressTimer = setTimeout(() => {
         this.longPressTimer = null
         this.longPressFired = true
-        this.callbacks.onStandbyLongPress(corps)
+        this.callbacks.onStandbyLongPress(corps.id)
       }, LONG_PRESS_MS)
     })
 

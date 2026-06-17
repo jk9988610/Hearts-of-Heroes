@@ -1,4 +1,11 @@
-import type { Army, FactionId, GameSave, TerrainType } from '../types/index.ts'
+import type { Battalion, GameSave, TerrainType } from '../types/index.ts'
+import {
+  countBattalionTroops,
+  distributeCenturyLosses,
+  isBattalionUnderstrength,
+  mergeBattalionCenturies,
+} from './organization/helpers.ts'
+import { findBattalionOnTile } from './organization/queries.ts'
 import { markTileCaptured } from './economy.ts'
 import { getDefensePolicyMultiplier, getMarchHours } from './policies.ts'
 import { COMBAT_HOURS, MARCH_HOURS } from './time-scale.ts'
@@ -56,7 +63,7 @@ export function resolveBattle(
   }
 }
 
-export function startCombat(attacker: Army, defender: Army): void {
+export function startCombat(attacker: Battalion, defender: Battalion): void {
   attacker.inCombat = true
   defender.inCombat = true
   attacker.combatHoursLeft = COMBAT_HOURS
@@ -64,108 +71,95 @@ export function startCombat(attacker: Army, defender: Army): void {
   attacker.targetTileId = defender.tileId
 }
 
-export function clearArmyMarch(army: Army): void {
-  army.targetTileId = undefined
-  army.marchHoursLeft = undefined
-  army.marchDaysLeft = undefined
+export function clearBattalionMarch(battalion: Battalion): void {
+  battalion.targetTileId = undefined
+  battalion.marchHoursLeft = undefined
+  battalion.marchDaysLeft = undefined
 }
 
-export function clearArmyCombat(army: Army): void {
-  army.inCombat = false
-  army.combatHoursLeft = undefined
-  army.combatDaysLeft = undefined
-  army.targetTileId = undefined
+export function clearBattalionCombat(battalion: Battalion): void {
+  battalion.inCombat = false
+  battalion.combatHoursLeft = undefined
+  battalion.combatDaysLeft = undefined
+  battalion.targetTileId = undefined
 }
 
-export function removeArmy(save: GameSave, army: Army): void {
-  const faction = save.factions[army.faction]
+export function removeBattalion(save: GameSave, battalion: Battalion): void {
+  const faction = save.factions[battalion.faction]
   if (!faction) return
-  faction.armies = faction.armies.filter((a) => a.id !== army.id)
-  const tile = save.tiles[army.tileId]
-  if (tile?.armyId === army.id) {
-    tile.armyId = undefined
+  faction.battalions = faction.battalions.filter((b) => b.id !== battalion.id)
+
+  if (battalion.corpsId) {
+    const corps = faction.corps.find((c) => c.id === battalion.corpsId)
+    if (corps) {
+      corps.battalionIds = corps.battalionIds.filter((id) => id !== battalion.id)
+    }
+  }
+
+  const tile = save.tiles[battalion.tileId]
+  if (tile?.battalionId === battalion.id) {
+    tile.battalionId = undefined
   }
 }
 
-export function syncArmyTile(save: GameSave, army: Army, tileId: string): void {
-  if (save.tiles[army.tileId]?.armyId === army.id) {
-    save.tiles[army.tileId]!.armyId = undefined
+export function syncBattalionTile(save: GameSave, battalion: Battalion, tileId: string): void {
+  if (save.tiles[battalion.tileId]?.battalionId === battalion.id) {
+    save.tiles[battalion.tileId]!.battalionId = undefined
   }
-  army.tileId = tileId
-  save.tiles[tileId]!.armyId = army.id
+  battalion.tileId = tileId
+  save.tiles[tileId]!.battalionId = battalion.id
 }
 
-export function findArmyOnTile(save: GameSave, tileId: string): Army | null {
-  for (const faction of Object.values(save.factions)) {
-    const army = faction.armies.find(
-      (a) => a.tileId === tileId && !a.marchHoursLeft && !a.marchDaysLeft,
-    )
-    if (army) return army
-  }
-  return null
-}
+export { findBattalionOnTile, findMarchingBattalionToTile, totalFactionTroops } from './organization/queries.ts'
 
-export function findMarchingArmyToTile(save: GameSave, tileId: string): Army | null {
-  for (const faction of Object.values(save.factions)) {
-    const army = faction.armies.find(
-      (a) =>
-        a.targetTileId === tileId &&
-        (a.marchHoursLeft !== undefined || a.marchDaysLeft !== undefined),
-    )
-    if (army) return army
-  }
-  return null
-}
-
-export function getMarchHoursLeft(army: Army): number | undefined {
-  if (army.marchHoursLeft !== undefined) return army.marchHoursLeft
-  if (army.marchDaysLeft !== undefined) return army.marchDaysLeft * 24
+export function getMarchHoursLeft(battalion: Battalion): number | undefined {
+  if (battalion.marchHoursLeft !== undefined) return battalion.marchHoursLeft
+  if (battalion.marchDaysLeft !== undefined) return battalion.marchDaysLeft * 24
   return undefined
 }
 
-export function getCombatHoursLeft(army: Army): number | undefined {
-  if (army.combatHoursLeft !== undefined) return army.combatHoursLeft
-  if (army.combatDaysLeft !== undefined) return army.combatDaysLeft * 24
+export function getCombatHoursLeft(battalion: Battalion): number | undefined {
+  if (battalion.combatHoursLeft !== undefined) return battalion.combatHoursLeft
+  if (battalion.combatDaysLeft !== undefined) return battalion.combatDaysLeft * 24
   return undefined
-}
-
-export function totalFactionTroops(save: GameSave, faction: FactionId): number {
-  return (save.factions[faction]?.armies ?? []).reduce((s, a) => s + a.troops, 0)
 }
 
 export function orderMarch(
   save: GameSave,
-  army: Army,
+  battalion: Battalion,
   targetTileId: string,
   baseHours = MARCH_HOURS,
 ): boolean {
-  if (army.inCombat || getMarchHoursLeft(army)) return false
-  const hours = getMarchHours(save, army.faction, baseHours)
-  army.targetTileId = targetTileId
-  army.marchHoursLeft = hours
-  army.marchDaysLeft = undefined
+  if (battalion.inCombat || getMarchHoursLeft(battalion)) return false
+  let hours = getMarchHours(save, battalion.faction, baseHours)
+  if (isBattalionUnderstrength(battalion)) {
+    hours = Math.ceil(hours * 1.2)
+  }
+  battalion.targetTileId = targetTileId
+  battalion.marchHoursLeft = hours
+  battalion.marchDaysLeft = undefined
   return true
 }
 
 export function finishMarch(
   save: GameSave,
-  army: Army,
+  battalion: Battalion,
   targetTileId: string,
   _terrain: TerrainType,
-): { type: 'moved' | 'combat' | 'merge'; defender?: Army } {
-  const defender = findArmyOnTile(save, targetTileId)
-  clearArmyMarch(army)
+): { type: 'moved' | 'combat' | 'merge'; defender?: Battalion } {
+  const defender = findBattalionOnTile(save, targetTileId)
+  clearBattalionMarch(battalion)
 
-  if (defender && defender.faction !== army.faction) {
-    syncArmyTile(save, army, targetTileId)
-    startCombat(army, defender)
+  if (defender && defender.faction !== battalion.faction) {
+    syncBattalionTile(save, battalion, targetTileId)
+    startCombat(battalion, defender)
     return { type: 'combat', defender }
   }
 
-  syncArmyTile(save, army, targetTileId)
-  if (defender && defender.faction === army.faction) {
-    army.troops += defender.troops
-    removeArmy(save, defender)
+  syncBattalionTile(save, battalion, targetTileId)
+  if (defender && defender.faction === battalion.faction) {
+    mergeBattalionCenturies(battalion, defender)
+    removeBattalion(save, defender)
     return { type: 'merge' }
   }
 
@@ -174,31 +168,38 @@ export function finishMarch(
 
 export function applyBattleOutcome(
   save: GameSave,
-  attacker: Army,
-  defender: Army,
+  attacker: Battalion,
+  defender: Battalion,
   terrain: TerrainType,
 ): BattleResult {
+  const atkBefore = countBattalionTroops(attacker)
+  const defBefore = countBattalionTroops(defender)
+
   const result = resolveBattle(
-    attacker.troops,
-    defender.troops,
+    atkBefore,
+    defBefore,
     terrain,
     getDefensePolicyMultiplier(save, defender.faction),
   )
-  attacker.troops = result.attackerTroops
-  defender.troops = result.defenderTroops
 
-  clearArmyCombat(attacker)
-  clearArmyCombat(defender)
+  distributeCenturyLosses(attacker, atkBefore - result.attackerTroops)
+  distributeCenturyLosses(defender, defBefore - result.defenderTroops)
+
+  clearBattalionCombat(attacker)
+  clearBattalionCombat(defender)
 
   if (result.attackerWins) {
-    removeArmy(save, defender)
+    removeBattalion(save, defender)
     markTileCaptured(save, attacker.tileId, attacker.faction)
-  } else if (defender.troops <= 0) {
-    removeArmy(save, defender)
+  } else if (countBattalionTroops(defender) <= 0) {
+    removeBattalion(save, defender)
     markTileCaptured(save, attacker.tileId, attacker.faction)
-  } else if (attacker.troops <= 0) {
-    removeArmy(save, attacker)
+  } else if (countBattalionTroops(attacker) <= 0) {
+    removeBattalion(save, attacker)
   }
 
   return result
 }
+
+/** @deprecated 兼容旧引用 */
+export const findArmyOnTile = findBattalionOnTile

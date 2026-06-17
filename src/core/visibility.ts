@@ -8,7 +8,6 @@ export interface ViewportRect {
   clientHeight: number
 }
 
-/** 根据视口滚动计算可见地块（含 1 格边距） */
 export function getVisibleTileIds(
   map: GeneratedMap,
   canvas: HTMLCanvasElement,
@@ -55,21 +54,24 @@ export function isFactionInView(
     if (state.owner === faction && visible.has(tileId)) return true
   }
 
-  for (const army of save.factions[faction]?.armies ?? []) {
-    if (visible.has(army.tileId)) return true
-    if (army.targetTileId && visible.has(army.targetTileId)) return true
+  for (const battalion of save.factions[faction]?.battalions ?? []) {
+    if (visible.has(battalion.tileId)) return true
+    if (battalion.targetTileId && visible.has(battalion.targetTileId)) return true
   }
 
   return false
 }
 
-export function isArmyEventVisible(
-  army: { tileId: string; targetTileId?: string; faction: FactionId },
+export function isBattalionEventVisible(
+  battalion: { tileId: string; targetTileId?: string; faction: FactionId },
   visible: Set<string>,
   playerFaction: FactionId,
 ): boolean {
-  if (army.faction === playerFaction) return true
-  if (visible.has(army.tileId)) return true
-  if (army.targetTileId && visible.has(army.targetTileId)) return true
+  if (battalion.faction === playerFaction) return true
+  if (visible.has(battalion.tileId)) return true
+  if (battalion.targetTileId && visible.has(battalion.targetTileId)) return true
   return false
 }
+
+/** @deprecated */
+export const isArmyEventVisible = isBattalionEventVisible

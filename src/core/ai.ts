@@ -2,7 +2,7 @@ import type { FactionId, GameSave, GeneratedMap } from '../types/index.ts'
 import { computeGridNeighbors } from '../map/generator.ts'
 import { FACTION_CAPITAL, PLAYABLE_FACTIONS } from './factions.ts'
 import {
-  findArmyOnTile,
+  findBattalionOnTile,
   MARCH_HOURS,
   orderMarch,
   totalFactionTroops,
@@ -13,6 +13,7 @@ import {
   canRecruit,
   recruitOnTile,
 } from './economy.ts'
+import { countBattalionTroops } from './organization/helpers.ts'
 
 function ownedTiles(save: GameSave, faction: FactionId): string[] {
   return Object.entries(save.tiles)
@@ -37,8 +38,10 @@ function weakestEnemyNeighbor(
   let best: { from: string; to: string; enemyTroops: number } | null = null
 
   for (const tileId of ownedTiles(save, faction)) {
-    const army = findArmyOnTile(save, tileId)
-    if (!army || army.inCombat || army.marchHoursLeft || army.marchDaysLeft) continue
+    const battalion = findBattalionOnTile(save, tileId)
+    if (!battalion || battalion.inCombat || battalion.marchHoursLeft || battalion.marchDaysLeft) {
+      continue
+    }
 
     const mapTile = map.tileById[tileId]
     if (!mapTile) continue
@@ -47,9 +50,10 @@ function weakestEnemyNeighbor(
       const nState = save.tiles[neighbor.id]
       if (!nState || nState.owner === faction || nState.owner === 'neutral') continue
 
-      const enemy = findArmyOnTile(save, neighbor.id)
-      const enemyTroops = enemy?.troops ?? 0
-      if (enemyTroops < army.troops) {
+      const enemy = findBattalionOnTile(save, neighbor.id)
+      const enemyTroops = enemy ? countBattalionTroops(enemy) : 0
+      const myTroops = countBattalionTroops(battalion)
+      if (enemyTroops < myTroops) {
         if (!best || enemyTroops < best.enemyTroops) {
           best = { from: tileId, to: neighbor.id, enemyTroops }
         }
@@ -89,13 +93,11 @@ function runAiFaction(
 
   if (totalTroops < 2000 && canRecruit(save, faction)) {
     const capital = FACTION_CAPITAL[faction]
-    const armyId = `army_${faction}_${capital}`
-    if (recruitOnTile(save, capital, faction, armyId)) {
-      return { faction, type: 'recruit', detail: `${capital} 募兵 +1000`, mode }
+    if (recruitOnTile(save, capital, faction)) {
+      return { faction, type: 'recruit', detail: `${capital} 募兵 +100`, mode }
     }
   }
 
-  // 视窗外精简：不发起进攻，仅经济/募兵
   if (mode === 'lite') {
     return { faction, type: 'idle', detail: '视窗外待机', mode }
   }
@@ -103,8 +105,8 @@ function runAiFaction(
   if (f.food > 80 && totalTroops >= 2000) {
     const target = weakestEnemyNeighbor(save, map, faction)
     if (target) {
-      const army = findArmyOnTile(save, target.from)
-      if (army && orderMarch(save, army, target.to, MARCH_HOURS)) {
+      const battalion = findBattalionOnTile(save, target.from)
+      if (battalion && orderMarch(save, battalion, target.to, MARCH_HOURS)) {
         return {
           faction,
           type: 'attack',
@@ -118,7 +120,6 @@ function runAiFaction(
   return { faction, type: 'idle', detail: '无行动', mode }
 }
 
-/** 所有非玩家势力 AI（玩家势力完全由玩家操控） */
 export function runAiTurn(
   save: GameSave,
   map: GeneratedMap,

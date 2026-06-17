@@ -39,7 +39,6 @@ export function renderLabelLayer(
   const layout = getMapLayout(canvas, map)
   const { cell, offsetX, offsetY } = layout
   const threshold = minWeightForScale(viewportScale)
-  const fontPx = LABEL_FONT_PX / viewportScale
 
   container.replaceChildren()
 
@@ -53,9 +52,10 @@ export function renderLabelLayer(
     const el = document.createElement('span')
     el.className = 'map-city-label'
     el.textContent = tile.name
-    el.style.left = `${cx}px`
-    el.style.top = `${cy}px`
-    el.style.fontSize = `${fontPx}px`
+    // 容器随视口等比放大，坐标需从画布空间换算到布局空间
+    el.style.left = `${cx * viewportScale}px`
+    el.style.top = `${cy * viewportScale}px`
+    el.style.fontSize = `${LABEL_FONT_PX}px`
     container.appendChild(el)
   }
 }

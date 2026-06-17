@@ -70,7 +70,8 @@ export function getCounterStance(
 
 function aggregationKey(b: Battalion): string {
   const understrength = isBattalionUnderstrength(b) ? 'u' : 'f'
-  return `${b.faction}|${b.corpsId ?? '_'}|${b.designation}|${understrength}`
+  // 同势力同兵种即可聚合（不要求同番号/同将军队）
+  return `${b.faction}|${UNIT_TYPE_ICON}|${understrength}`
 }
 
 function gridDistance(
@@ -86,15 +87,43 @@ function gridDistance(
 
 /** 视口缩放越小，聚合范围越大（格数） */
 export function aggregationDistanceForScale(viewportScale: number): number {
-  if (viewportScale >= 1.15) return 0
-  if (viewportScale >= 0.95) return 1
-  if (viewportScale >= 0.8) return 2
+  if (viewportScale >= 1.25) return 0
+  if (viewportScale >= 1.0) return 1
+  if (viewportScale >= 0.85) return 2
   return 3
 }
 
-/** 缩放较小时，同格同类也合并显示 */
+/** 缩放较小时，同格友军合并显示 */
 export function shouldMergeSameTile(viewportScale: number): boolean {
-  return viewportScale < 1.15
+  return viewportScale <= 1.25
+}
+
+export function isAggregatedCounter(counter: CounterDisplayItem): boolean {
+  return (counter.mergedBattalionIds?.length ?? 1) > 1 || counter.displayBattalionCount > 1
+}
+
+/** 聚合军棋包含的千人队 id，以及附近友方同类军棋 */
+export function collectCounterGroupMembers(
+  rep: CounterDisplayItem,
+  allItems: CounterDisplayItem[],
+  map: GeneratedMap,
+  viewportScale: number,
+): string[] {
+  const ids = new Set(rep.mergedBattalionIds ?? [rep.battalionId])
+  const aggDist = aggregationDistanceForScale(viewportScale)
+
+  if (aggDist > 0) {
+    for (const item of allItems) {
+      if (item.hidden) continue
+      if (item.faction !== rep.faction) continue
+      if (gridDistance(map, rep.tileId, item.tileId) > aggDist) continue
+      for (const id of item.mergedBattalionIds ?? [item.battalionId]) {
+        ids.add(id)
+      }
+    }
+  }
+
+  return [...ids].sort()
 }
 
 export function computeCounterBounds(
@@ -260,8 +289,12 @@ function mergeCluster(cluster: CounterDisplayItem[]): void {
   const rep = cluster.reduce((a, b) => (a.battalionId < b.battalionId ? a : b))
   let sum = 0
   const mergedIds: string[] = []
+  let orgSum = 0
+  let equipSum = 0
   for (const c of cluster) {
     sum += c.displayBattalionCount
+    orgSum += c.organization
+    equipSum += c.equipment
     mergedIds.push(c.battalionId)
     if (c.battalionId !== rep.battalionId) {
       c.hidden = true
@@ -269,6 +302,8 @@ function mergeCluster(cluster: CounterDisplayItem[]): void {
   }
   rep.displayBattalionCount = sum
   rep.mergedBattalionIds = mergedIds
+  rep.organization = Math.round(orgSum / cluster.length)
+  rep.equipment = Math.round(equipSum / cluster.length)
 }
 
 function mergeByTileAndKey(

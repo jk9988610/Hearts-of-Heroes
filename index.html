@@ -159,11 +159,16 @@
       .map-counter-left-top {
         border-bottom: 1px solid rgba(0, 0, 0, 0.12);
       }
-      .map-counter-unit-icon,
-      .map-counter-faction-icon {
+      .map-counter-unit-icon {
         width: 12px;
         height: 12px;
         object-fit: contain;
+        pointer-events: none;
+      }
+      .map-counter-faction-icon {
+        width: 14px;
+        height: 8px;
+        object-fit: fill;
         pointer-events: none;
       }
       .map-counter-mid {
@@ -238,6 +243,50 @@
       }
       #tile-float h4 { margin: 0 0 0.35rem; font-size: 0.85rem; }
       #tile-float-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+
+      #counter-stack-float {
+        position: absolute;
+        top: 7.5rem;
+        right: 0.5rem;
+        width: min(280px, 42vw);
+        max-height: 40%;
+        overflow: auto;
+        padding: 0.5rem 0.65rem;
+        background: rgba(244, 239, 228, 0.96);
+        border: 1px solid #8b7355;
+        border-radius: 4px;
+        font-size: 0.82rem;
+        z-index: 13;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      }
+      #counter-stack-float[hidden] { display: none; }
+      .counter-stack-float-title { font-weight: bold; margin-bottom: 0.35rem; }
+      .counter-stack-float-close {
+        float: right;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-size: 0.9rem;
+        color: #5c4f3a;
+      }
+      .counter-stack-item {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+        margin-bottom: 0.3rem;
+        padding: 0.35rem 0.45rem;
+        border: 1px solid #c9b896;
+        background: #e8e0d0;
+        cursor: pointer;
+        text-align: left;
+      }
+      .counter-stack-item--active {
+        border-color: #ffd700;
+        background: #f5efd8;
+      }
+      .counter-stack-item-name { font-weight: bold; font-size: 0.82rem; }
+      .counter-stack-item-meta { font-size: 0.75rem; color: #5c4f3a; margin-top: 0.1rem; }
 
       #corps-float {
         position: absolute;
@@ -643,6 +692,12 @@
           <button type="button" class="battalion-float-close">关闭</button>
           <div class="battalion-float-title">编队详情</div>
           <div class="battalion-float-body"></div>
+        </div>
+
+        <div id="counter-stack-float" hidden>
+          <button type="button" class="counter-stack-float-close">关闭</button>
+          <div class="counter-stack-float-title">军棋编队</div>
+          <div class="counter-stack-float-body"></div>
         </div>
 
         <aside id="tile-float">

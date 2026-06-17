@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
-  <circle cx="8" cy="8" r="7" fill="#f4efe4" stroke="#1a1208" stroke-width="1"/>
-  <text x="8" y="11" text-anchor="middle" font-size="9" font-family="serif" fill="#1a1208">O</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 12">
+  <rect x="0.5" y="0.5" width="19" height="11" rx="0.5" fill="#f4efe4" stroke="#1a1208" stroke-width="1"/>
+  <text x="10" y="9" text-anchor="middle" font-size="8" font-family="serif" fill="#1a1208">魏</text>
 </svg>

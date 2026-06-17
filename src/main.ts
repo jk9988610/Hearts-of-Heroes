@@ -9,7 +9,7 @@ import {
   loadTerrainConfig,
 } from './map/generator.ts'
 import { buildArmyDisplay, getArmyForUi } from './map/army-display.ts'
-import { buildCounterDisplay, hitTestCounter, renderCounterLayer } from './map/counter-layer.ts'
+import { buildCounterDisplay, hitTestCounter, isAggregatedCounter, renderCounterLayer } from './map/counter-layer.ts'
 import { renderLabelLayer } from './map/label-layer.ts'
 import { BattleAnimator } from './map/battle-animation.ts'
 import { drawMapLayer } from './core/map-layers/renderer.ts'
@@ -85,6 +85,7 @@ import { CorpsBar } from './ui/shell/corps-bar.ts'
 import { CorpsDetail } from './ui/shell/corps-detail.ts'
 import { ArmyGroupDetail } from './ui/shell/army-group-detail.ts'
 import { BattalionDetail } from './ui/shell/battalion-detail.ts'
+import { CounterStackFloat } from './ui/shell/counter-stack-float.ts'
 import { renderPolicyTree } from './ui/shell/policy-tree.ts'
 import type { FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
 
@@ -109,6 +110,7 @@ const battleAnimator = new BattleAnimator(() => renderMap())
 let corpsDetail: CorpsDetail | null = null
 let armyGroupDetail: ArmyGroupDetail | null = null
 let battalionDetail: BattalionDetail | null = null
+let counterStackFloat: CounterStackFloat | null = null
 
 const MAX_RECENT_EVENTS = 8
 const recentEvents: string[] = []
@@ -305,6 +307,26 @@ function renderMap(): void {
   }
 
   redrawMinimap?.()
+  syncCounterStackFloat()
+}
+
+function syncCounterStackFloat(): void {
+  if (!save || !map || mapLayer !== 'military' || !selectedBattalionId) {
+    counterStackFloat?.hide()
+    return
+  }
+  const battalionId = selectedBattalionId
+  const scale = mapViewportCtrl?.getScale() ?? 1
+  const counter = lastCounterItems.find(
+    (c) =>
+      !c.hidden &&
+      (c.battalionId === battalionId || c.mergedBattalionIds?.includes(battalionId)),
+  )
+  if (counter && isAggregatedCounter(counter)) {
+    counterStackFloat?.show(save, map, counter, lastCounterItems, scale)
+  } else {
+    counterStackFloat?.hide()
+  }
 }
 
 function renderPolicies(): void {
@@ -557,6 +579,24 @@ function bindShell(): void {
   })
 
   battalionDetail = new BattalionDetail(document.querySelector('#battalion-float')!)
+  counterStackFloat = new CounterStackFloat(document.querySelector('#counter-stack-float')!, {
+    onSelect: (battalionId) => {
+      if (!save || !map) return
+      selectedBattalionId = battalionId
+      selectedTileId = undefined
+      updatePanel()
+      renderMap()
+      const counter = lastCounterItems.find(
+        (c) =>
+          !c.hidden &&
+          (c.battalionId === battalionId || c.mergedBattalionIds?.includes(battalionId)),
+      )
+      const scale = mapViewportCtrl?.getScale() ?? 1
+      if (counter) {
+        counterStackFloat?.show(save, map, counter, lastCounterItems, scale)
+      }
+    },
+  })
 
   corpsCommandBar = new CorpsCommandBar(document.querySelector('#corps-command-bar')!, {
     getCorpsLabel: () => {
@@ -960,6 +1000,8 @@ function onMapTap(clientX: number, clientY: number): void {
       return
     }
   }
+
+  counterStackFloat?.hide()
 
   const tile = hitTestTile(canvas, map, clientX, clientY)
   if (!tile) return

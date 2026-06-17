@@ -46,9 +46,10 @@ export function buildCounterDisplay(
   save: GameSave,
   map: GeneratedMap,
   viewportScale: number,
-  options: {
+    options: {
     selectedBattalionId?: string
     selectedCorpsId?: string
+    selectedCorpsIds?: string[]
     troopOverrides?: Record<string, number>
   } = {},
 ): CounterDisplayItem[] {
@@ -77,8 +78,9 @@ export function buildCounterDisplay(
       equipment: equip,
       selected:
         options.selectedBattalionId === battalion.id ||
-        (options.selectedCorpsId !== undefined &&
-          battalion.corpsId === options.selectedCorpsId),
+        (options.selectedCorpsId !== undefined && battalion.corpsId === options.selectedCorpsId) ||
+        (battalion.corpsId !== undefined &&
+          (options.selectedCorpsIds?.includes(battalion.corpsId) ?? false)),
       status: isMarching
         ? `→${marchH}h`
         : battalion.inCombat

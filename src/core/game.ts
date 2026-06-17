@@ -9,7 +9,7 @@ import {
   getMarchHoursLeft,
 } from './combat.ts'
 import { countBattalionTroops } from './organization/helpers.ts'
-import { processEconomyHour } from './economy.ts'
+import { processEconomyHour, processStarvationDissolution } from './economy.ts'
 import { isBattalionEventVisible, isFactionInView } from './visibility.ts'
 import type { GameClock } from './time-scale.ts'
 import { AI_LITE_INTERVAL_HOURS } from './time-scale.ts'
@@ -24,6 +24,7 @@ export interface TickEvents {
   ai: AiAction[]
   marches: string[]
   battles: string[]
+  starvation: string[]
   battleFlashes: { tileId: string; kind: 'capture' | 'defend' | 'stalemate' }[]
 }
 
@@ -32,13 +33,16 @@ export function gameHourTick(
   map: GeneratedMap,
   ctx: TickContext,
 ): TickEvents {
-  const events: TickEvents = { ai: [], marches: [], battles: [], battleFlashes: [] }
+  const events: TickEvents = { ai: [], marches: [], battles: [], starvation: [], battleFlashes: [] }
   const isNewDay = ctx.clock.hour === 0
 
   save.date = ctx.clock.day
   save.hour = ctx.clock.hour
 
   processEconomyHour(save, map, isNewDay)
+  if (isNewDay) {
+    events.starvation = processStarvationDissolution(save)
+  }
   processMarching(save, map, ctx, events)
   processCombat(save, map, ctx, events)
 

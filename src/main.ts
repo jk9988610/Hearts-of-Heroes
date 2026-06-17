@@ -40,6 +40,20 @@ import {
   defendCorps,
   trainCorps,
 } from './core/organization/corps-commands.ts'
+import {
+  appointMarshal,
+  cancelArmyGroupMarch,
+  createArmyGroup,
+  defendArmyGroup,
+  disbandArmyGroup,
+  findArmyGroupById,
+  getArmyGroupLabel,
+  getCorpsIdsInGroup,
+  getFactionArmyGroups,
+  getUnassignedCorps,
+  trainArmyGroup,
+} from './core/organization/army-group-ops.ts'
+import { setHeroRegistry } from './core/organization/hero-assign.ts'
 import { findCorpsById, getStandbyCorps } from './core/organization/queries.ts'
 import {
   buildTuntian,
@@ -49,8 +63,6 @@ import {
   TUNTIAN_COST,
 } from './core/economy.ts'
 import {
-  activatePolicy,
-  canActivatePolicy,
   loadPoliciesConfig,
 } from './core/policies.ts'
 import { checkVictory, getPlayerStatusHints } from './core/victory.ts'
@@ -70,7 +82,9 @@ import { bindMinimap } from './ui/minimap.ts'
 import { bindLayerSwitcher } from './ui/shell/layer-switcher.ts'
 import { CorpsBar } from './ui/shell/corps-bar.ts'
 import { CorpsDetail } from './ui/shell/corps-detail.ts'
+import { ArmyGroupDetail } from './ui/shell/army-group-detail.ts'
 import { BattalionDetail } from './ui/shell/battalion-detail.ts'
+import { renderPolicyTree } from './ui/shell/policy-tree.ts'
 import type { FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
@@ -78,7 +92,7 @@ const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const panelTileEl = document.querySelector<HTMLDivElement>('#panel-tile')!
 const panelArmyEl = document.querySelector<HTMLDivElement>('#panel-army')!
 const eventsPanelEl = document.querySelector<HTMLDivElement>('#events-panel')!
-const policyListEl = document.querySelector<HTMLDivElement>('#policy-list-modal')!
+const policyTreeEl = document.querySelector<HTMLDivElement>('#policy-tree')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
 const counterCanvas = document.querySelector<HTMLCanvasElement>('#counter-layer')!
 const mapViewport = document.querySelector<HTMLDivElement>('#map-viewport')!
@@ -90,6 +104,7 @@ const logger = new DebugLogger({ container: logEl })
 const alerts = new AlertBanner(document.querySelector<HTMLDivElement>('#alert-banner')!)
 const battleAnimator = new BattleAnimator(() => renderMap())
 let corpsDetail: CorpsDetail | null = null
+let armyGroupDetail: ArmyGroupDetail | null = null
 let battalionDetail: BattalionDetail | null = null
 
 const MAX_RECENT_EVENTS = 8
@@ -108,6 +123,7 @@ let corpsBar: CorpsBar | null = null
 let corpsCommandBar: CorpsCommandBar | null = null
 let mapViewportCtrl: MapViewportController | null = null
 let selectedCorpsId: string | null = null
+let selectedArmyGroupId: string | null = null
 let redrawMinimap: (() => void) | null = null
 let modalHost: ModalHost | null = null
 
@@ -156,11 +172,29 @@ function formatTileBrief(tile: MapTile): string {
 }
 
 function syncCorpsCommandBar(): void {
-  if (!selectedCorpsId || !save) {
+  if (!save) {
     corpsCommandBar?.hide()
     return
   }
   const pf = playerFaction()
+
+  if (selectedArmyGroupId) {
+    const group = findArmyGroupById(save, selectedArmyGroupId)
+    if (!group || group.faction !== pf) {
+      selectedArmyGroupId = null
+      corpsCommandBar?.hide()
+      return
+    }
+    corpsCommandBar?.show()
+    corpsCommandBar?.refresh()
+    return
+  }
+
+  if (!selectedCorpsId) {
+    corpsCommandBar?.hide()
+    return
+  }
+
   const corps = findCorpsById(save, selectedCorpsId)
   if (!corps || corps.faction !== pf) {
     selectedCorpsId = null
@@ -215,9 +249,11 @@ function renderMap(): void {
   })
 
   if (useCounters) {
+    const group = selectedArmyGroupId ? findArmyGroupById(save, selectedArmyGroupId) : null
     const counters = buildCounterDisplay(save, map, scale, {
       selectedBattalionId: selectedBattalion?.id,
       selectedCorpsId: selectedCorpsId ?? undefined,
+      selectedCorpsIds: group ? getCorpsIdsInGroup(save, group) : undefined,
       troopOverrides,
     })
     drawCounterLayer(counterCanvas, map, counters)
@@ -230,29 +266,12 @@ function renderMap(): void {
 }
 
 function renderPolicies(): void {
-  if (!save || !policyListEl) return
-  const pf = playerFaction()
-  policyListEl.innerHTML = ''
-
-  for (const policy of policies) {
-    const btn = document.createElement('button')
-    const owned = save.factions[pf]?.policies.includes(policy.id)
-    btn.type = 'button'
-    btn.textContent = owned
-      ? `✓ ${policy.name}`
-      : `${policy.name} (${policy.cost}粮)`
-    btn.disabled = gameEnded || owned || !canActivatePolicy(save, pf, policy)
-    btn.addEventListener('click', () => {
-      if (!save || activatePolicy(save, pf, policy)) {
-        logger.log('system', `国策 ${policy.name} 已激活`)
-        alerts.show(`国策「${policy.name}」已生效`, 'success')
-        updatePanel()
-        renderPolicies()
-        renderMap()
-      }
-    })
-    policyListEl.appendChild(btn)
-  }
+  if (!save || !policyTreeEl) return
+  renderPolicyTree(policyTreeEl, save, policies, playerFaction(), () => {
+    logger.log('system', '国策已更新')
+    updatePanel()
+    renderMap()
+  })
 }
 
 function updatePanel(): void {
@@ -347,6 +366,7 @@ async function startNewGame(faction: FactionId): Promise<void> {
   recentEvents.length = 0
   eventsPanelEl.textContent = '暂无'
   corpsDetail?.hide()
+  armyGroupDetail?.hide()
   battalionDetail?.hide()
 
   const terrainConfig = await loadTerrainConfig()
@@ -364,6 +384,7 @@ async function startNewGame(faction: FactionId): Promise<void> {
   time?.resume()
   selectedTileId = undefined
   selectedCorpsId = null
+  selectedArmyGroupId = null
   corpsCommandBar?.hide()
   alerts.show(`新游戏开始，你操控${getFactionLabel(faction)}`, 'success', 4000)
 }
@@ -458,14 +479,23 @@ function bindShell(): void {
 
   corpsCommandBar = new CorpsCommandBar(document.querySelector('#corps-command-bar')!, {
     getCorpsLabel: () => {
-      if (!save || !selectedCorpsId) return '将军队'
+      if (!save) return '编制'
+      if (selectedArmyGroupId) {
+        const group = findArmyGroupById(save, selectedArmyGroupId)
+        return group ? getArmyGroupLabel(group, heroes) : '集团军'
+      }
+      if (!selectedCorpsId) return '将军队'
       const corps = findCorpsById(save, selectedCorpsId)
       return corps ? getCorpsLabel(corps, heroes) : '将军队'
     },
     onTrain: () => {
-      if (!save || !selectedCorpsId) return
+      if (!save) return
       const pf = playerFaction()
-      const result = trainCorps(save, selectedCorpsId, pf)
+      const result = selectedArmyGroupId
+        ? trainArmyGroup(save, selectedArmyGroupId, pf)
+        : selectedCorpsId
+          ? trainCorps(save, selectedCorpsId, pf)
+          : { ok: false, message: '未选中编制' }
       alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
       if (result.ok) {
         updatePanel()
@@ -473,9 +503,13 @@ function bindShell(): void {
       }
     },
     onDefend: () => {
-      if (!save || !selectedCorpsId) return
+      if (!save) return
       const pf = playerFaction()
-      const result = defendCorps(save, selectedCorpsId, pf)
+      const result = selectedArmyGroupId
+        ? defendArmyGroup(save, selectedArmyGroupId, pf)
+        : selectedCorpsId
+          ? defendCorps(save, selectedCorpsId, pf)
+          : { ok: false, message: '未选中编制' }
       alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
       if (result.ok) {
         updatePanel()
@@ -483,14 +517,55 @@ function bindShell(): void {
       }
     },
     onCancelMarch: () => {
-      if (!save || !selectedCorpsId) return
+      if (!save) return
       const pf = playerFaction()
-      const result = cancelCorpsMarch(save, selectedCorpsId, pf)
+      const result = selectedArmyGroupId
+        ? cancelArmyGroupMarch(save, selectedArmyGroupId, pf)
+        : selectedCorpsId
+          ? cancelCorpsMarch(save, selectedCorpsId, pf)
+          : { ok: false, message: '未选中编制' }
       alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
       if (result.ok) {
         updatePanel()
         renderMap()
       }
+    },
+  })
+
+  armyGroupDetail = new ArmyGroupDetail(document.querySelector('#army-group-float')!, {
+    onAppointMarshal: (groupId, heroId) => {
+      if (!save) return
+      const pf = playerFaction()
+      const result = appointMarshal(save, groupId, heroId, pf)
+      alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
+      if (result.ok) {
+        armyGroupDetail?.refresh(save, heroes, pf)
+        corpsBar?.refresh()
+        renderMap()
+      }
+    },
+    onDisband: (groupId) => {
+      if (!save) return
+      const pf = playerFaction()
+      const result = disbandArmyGroup(save, groupId, pf)
+      alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
+      if (result.ok) {
+        selectedArmyGroupId = null
+        armyGroupDetail?.hide()
+        corpsBar?.refresh()
+        syncCorpsCommandBar()
+        renderMap()
+      }
+    },
+    onCorpsClick: (corpsId) => {
+      if (!save || !map) return
+      selectedArmyGroupId = null
+      selectedCorpsId = corpsId
+      corpsDetail?.show(save, map, corpsId, heroes, playerFaction())
+      armyGroupDetail?.hide()
+      corpsBar?.refresh()
+      syncCorpsCommandBar()
+      renderMap()
     },
   })
 
@@ -506,6 +581,25 @@ function bindShell(): void {
           tileName: map!.tileById[c.tileId]?.name ?? c.tileId,
         }))
       },
+      getArmyGroups: () => {
+        if (!save) return []
+        return getFactionArmyGroups(save, playerFaction()).map((g) => ({
+          id: g.id,
+          label: getArmyGroupLabel(g, heroes),
+        }))
+      },
+      getSelectedArmyGroupId: () => selectedArmyGroupId,
+      onArmyGroupClick: (groupId) => {
+        if (!save) return
+        selectedArmyGroupId = groupId
+        selectedCorpsId = null
+        corpsDetail?.hide()
+        armyGroupDetail?.show(save, groupId, heroes, playerFaction())
+        corpsBar?.refresh()
+        syncCorpsCommandBar()
+        renderMap()
+      },
+      onCreateArmyGroup: () => openArmyGroupModal(),
       getSelectedCorpsId: () => selectedCorpsId,
       onNewCorps: () => {
         if (!save || !map || !selectedTileId) return
@@ -522,6 +616,8 @@ function bindShell(): void {
       onStandbyClick: (corpsId) => {
         if (!save || !map) return
         selectedCorpsId = corpsId
+        selectedArmyGroupId = null
+        armyGroupDetail?.hide()
         corpsDetail?.show(save, map, corpsId, heroes, playerFaction())
         corpsBar?.refresh()
         syncCorpsCommandBar()
@@ -552,16 +648,70 @@ function bindShell(): void {
   )
 }
 
+function openArmyGroupModal(): void {
+  if (!save) return
+  const modal = document.querySelector<HTMLDivElement>('#army-group-modal')!
+  const listEl = document.querySelector<HTMLDivElement>('#army-group-pick-list')!
+  const confirmBtn = document.querySelector<HTMLButtonElement>('#army-group-confirm')!
+  const cancelBtn = document.querySelector<HTMLButtonElement>('#army-group-cancel')!
+  const pf = playerFaction()
+  const corps = getUnassignedCorps(save, pf)
+  const selected = new Set<string>()
+
+  listEl.innerHTML = corps.length
+    ? corps
+        .map(
+          (c) =>
+            `<label class="ag-pick-item"><input type="checkbox" value="${c.id}" /> ${getCorpsLabel(c, heroes)}</label>`,
+        )
+        .join('')
+    : '<p class="corps-float-hint">无可编入的将军队</p>'
+
+  const syncConfirm = () => {
+    confirmBtn.disabled = selected.size < 2
+  }
+
+  listEl.querySelectorAll('input[type=checkbox]').forEach((input) => {
+    input.addEventListener('change', () => {
+      const el = input as HTMLInputElement
+      if (el.checked) selected.add(el.value)
+      else selected.delete(el.value)
+      syncConfirm()
+    })
+  })
+  syncConfirm()
+  modal.hidden = false
+
+  const close = () => {
+    modal.hidden = true
+  }
+
+  confirmBtn.onclick = () => {
+    const result = createArmyGroup(save!, pf, [...selected])
+    alerts.show(result.message, result.ok ? 'success' : 'warn', 3000)
+    if (result.ok && result.group) {
+      selectedArmyGroupId = result.group.id
+      armyGroupDetail?.show(save!, result.group.id, heroes, pf)
+      corpsBar?.refresh()
+      syncCorpsCommandBar()
+      renderMap()
+    }
+    close()
+  }
+  cancelBtn.onclick = close
+}
+
 async function bootstrap(): Promise<void> {
   document.querySelector('#app-version')!.textContent = `v${LOCAL_VERSION.version}`
 
   policies = await loadPoliciesConfig()
   const heroRes = await fetch(assetUrl('config/heroes.json'))
   heroes = (await heroRes.json()) as HeroConfig[]
+  setHeroRegistry(heroes)
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  logger.log('map', `指挥台 v0.85 · 军棋层 · 操控栏`)
+  logger.log('map', `指挥台 v0.9 · 集团军 · 国策树 · 粮尽溃散`)
 
   const existing = await loadGame()
   if (existing) {
@@ -614,6 +764,12 @@ async function bootstrap(): Promise<void> {
 
       for (const m of events.marches) pushRecentEvent(m)
       for (const b of events.battles) pushRecentEvent(b)
+      for (const s of events.starvation) {
+        pushRecentEvent(s)
+        if (s.includes(playerFaction())) {
+          alerts.show(s, 'warn', 5000)
+        }
+      }
       for (const flash of events.battleFlashes) {
         battleAnimator.triggerFlash(flash.tileId, flash.kind)
       }
@@ -641,7 +797,7 @@ async function bootstrap(): Promise<void> {
   updateStatus()
   updatePanel()
   renderMap()
-  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 军棋层 v0.85`)
+  logger.log('system', `就绪 v${LOCAL_VERSION.version} · v0.9`)
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {

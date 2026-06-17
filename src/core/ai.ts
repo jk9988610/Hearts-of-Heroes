@@ -13,13 +13,10 @@ import {
   canRecruit,
   recruitOnTile,
 } from './economy.ts'
-import { countBattalionTroops } from './organization/helpers.ts'
+import { countBattalionTroops, countCorpsTroops } from './organization/helpers.ts'
+import { getCorpsBattalions } from './organization/queries.ts'
+import type { Corps } from '../types/index.ts'
 
-function ownedTiles(save: GameSave, faction: FactionId): string[] {
-  return Object.entries(save.tiles)
-    .filter(([, t]) => t.owner === faction)
-    .map(([id]) => id)
-}
 
 function keyCityWithoutTuntian(save: GameSave, map: GeneratedMap, faction: FactionId): string | null {
   for (const tile of map.tiles) {
@@ -30,37 +27,33 @@ function keyCityWithoutTuntian(save: GameSave, map: GeneratedMap, faction: Facti
   return null
 }
 
-function weakestEnemyNeighbor(
+function corpsAttackTarget(
   save: GameSave,
   map: GeneratedMap,
-  faction: FactionId,
+  corps: Corps,
 ): { from: string; to: string; enemyTroops: number } | null {
+  const battalions = getCorpsBattalions(save, corps)
   let best: { from: string; to: string; enemyTroops: number } | null = null
+  const corpsTroops = countCorpsTroops(save, corps)
 
-  for (const tileId of ownedTiles(save, faction)) {
-    const battalion = findBattalionOnTile(save, tileId)
-    if (!battalion || battalion.inCombat || battalion.marchHoursLeft || battalion.marchDaysLeft) {
-      continue
-    }
-
-    const mapTile = map.tileById[tileId]
+  for (const battalion of battalions) {
+    if (battalion.inCombat || battalion.marchHoursLeft) continue
+    const mapTile = map.tileById[battalion.tileId]
     if (!mapTile) continue
 
     for (const neighbor of computeGridNeighbors(map, mapTile)) {
       const nState = save.tiles[neighbor.id]
-      if (!nState || nState.owner === faction || nState.owner === 'neutral') continue
+      if (!nState || nState.owner === corps.faction || nState.owner === 'neutral') continue
 
       const enemy = findBattalionOnTile(save, neighbor.id)
       const enemyTroops = enemy ? countBattalionTroops(enemy) : 0
-      const myTroops = countBattalionTroops(battalion)
-      if (enemyTroops < myTroops) {
+      if (enemyTroops < corpsTroops) {
         if (!best || enemyTroops < best.enemyTroops) {
-          best = { from: tileId, to: neighbor.id, enemyTroops }
+          best = { from: battalion.tileId, to: neighbor.id, enemyTroops }
         }
       }
     }
   }
-
   return best
 }
 
@@ -103,14 +96,21 @@ function runAiFaction(
   }
 
   if (f.food > 80 && totalTroops >= 2000) {
-    const target = weakestEnemyNeighbor(save, map, faction)
-    if (target) {
+    const activeCorps = f.corps
+      .filter((c) => !c.standby && countCorpsTroops(save, c) >= 500)
+      .sort((a, b) => countCorpsTroops(save, b) - countCorpsTroops(save, a))
+
+    for (const corps of activeCorps) {
+      const target = corpsAttackTarget(save, map, corps)
+      if (!target) continue
+
       const battalion = findBattalionOnTile(save, target.from)
-      if (battalion && orderMarch(save, battalion, target.to, MARCH_HOURS)) {
+      if (battalion && battalion.corpsId === corps.id && orderMarch(save, battalion, target.to, MARCH_HOURS)) {
+        const label = corps.heroId ? `将军队` : corps.id
         return {
           faction,
           type: 'attack',
-          detail: `${target.from} → ${target.to}（敌${target.enemyTroops}）`,
+          detail: `${label} ${target.from} → ${target.to}（敌${target.enemyTroops}）`,
           mode,
         }
       }

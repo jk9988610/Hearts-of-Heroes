@@ -1,4 +1,5 @@
 import type { Corps, FactionId, GameSave, GeneratedMap, HeroConfig } from '../../types/index.ts'
+import { getAssignedHeroIds } from '../../core/organization/hero-assign.ts'
 import { countCorpsTroops, getCorpsLabel } from '../../core/organization/helpers.ts'
 import { getCorpsBattalions } from '../../core/organization/queries.ts'
 
@@ -95,6 +96,7 @@ export class CorpsDetail {
     const faction = save.factions[playerFaction]
     if (!faction) return
 
+    const assigned = getAssignedHeroIds(save, playerFaction)
     const available = heroes.filter((h) => h.faction === playerFaction && faction.heroes.includes(h.id))
     if (available.length === 0) {
       this.bodyEl.insertAdjacentHTML(
@@ -106,8 +108,10 @@ export class CorpsDetail {
 
     const list = available
       .map(
-        (h) =>
-          `<button type="button" class="corps-float-btn corps-hero-pick" data-hero="${h.id}">${h.name}（攻${h.attack}/防${h.defense}）</button>`,
+        (h) => {
+          const tag = assigned.has(h.id) && corps.heroId !== h.id ? '（已任命）' : ''
+          return `<button type="button" class="corps-float-btn corps-hero-pick" data-hero="${h.id}">${h.name}${tag}（攻${h.attack}/防${h.defense}）</button>`
+        },
       )
       .join('')
 

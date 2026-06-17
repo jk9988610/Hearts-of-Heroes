@@ -14,6 +14,7 @@ import {
 } from './organization/helpers.ts'
 import { ensureOrganizationTiles, migrateArmiesToOrganization } from './organization/migrate.ts'
 import { ensureBattalionDefaults } from './organization/corps-commands.ts'
+import { autoAssignAiGenerals, ensureArmyGroups } from './organization/hero-assign.ts'
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 
@@ -106,9 +107,9 @@ export function createNewGame(
   }
 
   const factions: GameSave['factions'] = {
-    wei: { food: 100, corps: [], battalions: [], policies: [], heroes: heroIdsByFaction.wei ?? [] },
-    shu: { food: 100, corps: [], battalions: [], policies: [], heroes: heroIdsByFaction.shu ?? [] },
-    wu: { food: 100, corps: [], battalions: [], policies: [], heroes: heroIdsByFaction.wu ?? [] },
+    wei: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.wei ?? [] },
+    shu: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.shu ?? [] },
+    wu: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.wu ?? [] },
   }
 
   const save: GameSave = {
@@ -133,11 +134,19 @@ export function migrateSave(save: GameSave): GameSave {
   for (const faction of Object.values(save.factions)) {
     faction.corps = faction.corps ?? []
     faction.battalions = faction.battalions ?? []
+    faction.armyGroups = faction.armyGroups ?? []
   }
 
   migrateArmiesToOrganization(save)
   ensureOrganizationTiles(save)
+  ensureArmyGroups(save)
   ensureBattalionDefaults(save)
+
+  for (const [fid] of Object.entries(save.factions)) {
+    if (fid !== save.playerFaction) {
+      autoAssignAiGenerals(save, fid as FactionId)
+    }
+  }
 
   const totalBattalions = Object.values(save.factions).reduce(
     (n, f) => n + f.battalions.length,

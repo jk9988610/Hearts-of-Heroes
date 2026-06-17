@@ -7,13 +7,22 @@ export interface CorpsBarItem {
   tileName: string
 }
 
+export interface ArmyGroupBarItem {
+  id: string
+  label: string
+}
+
 export interface CorpsBarCallbacks {
   onNewCorps: () => void
   onStandbyClick: (corpsId: string) => void
   onStandbyLongPress: (corpsId: string) => void
+  onArmyGroupClick: (groupId: string) => void
+  onCreateArmyGroup: () => void
   canCreateCorps: () => boolean
   getStandbyCorps: () => CorpsBarItem[]
+  getArmyGroups: () => ArmyGroupBarItem[]
   getSelectedCorpsId: () => string | null
+  getSelectedArmyGroupId: () => string | null
 }
 
 export class CorpsBar {
@@ -30,7 +39,24 @@ export class CorpsBar {
 
   private render(): void {
     const standby = this.callbacks.getStandbyCorps()
+    const groups = this.callbacks.getArmyGroups()
     this.gridEl.innerHTML = ''
+
+    if (groups.length > 0 || true) {
+      const agRow = document.createElement('div')
+      agRow.className = 'corps-row corps-row-ag'
+      const createAgBtn = document.createElement('button')
+      createAgBtn.type = 'button'
+      createAgBtn.className = 'corps-btn corps-btn-ag-new'
+      createAgBtn.textContent = '组建集团军'
+      createAgBtn.addEventListener('click', () => this.callbacks.onCreateArmyGroup())
+      agRow.appendChild(createAgBtn)
+      for (const g of [...groups].reverse()) {
+        agRow.appendChild(this.createArmyGroupBtn(g))
+      }
+      this.gridEl.appendChild(agRow)
+    }
+
     const rows: CorpsBarItem[][] = []
     for (let i = 0; i < standby.length; i += COLS_PER_ROW) {
       rows.push(standby.slice(i, i + COLS_PER_ROW))
@@ -64,6 +90,19 @@ export class CorpsBar {
       rowEl.appendChild(this.createNewBtn())
       this.gridEl.appendChild(rowEl)
     }
+  }
+
+  private createArmyGroupBtn(group: ArmyGroupBarItem): HTMLButtonElement {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'corps-btn corps-btn-ag'
+    if (this.callbacks.getSelectedArmyGroupId() === group.id) {
+      btn.classList.add('selected')
+    }
+    btn.textContent = group.label
+    btn.title = '单击集团军详情'
+    btn.addEventListener('click', () => this.callbacks.onArmyGroupClick(group.id))
+    return btn
   }
 
   private createNewBtn(): HTMLButtonElement {

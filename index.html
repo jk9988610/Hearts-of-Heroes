@@ -81,10 +81,23 @@
         cursor: grab;
       }
       #map-viewport:active { cursor: grabbing; }
+      #map-stack {
+        position: relative;
+        display: inline-block;
+      }
       #map {
         display: block;
         width: 600px;
         height: 600px;
+      }
+      #counter-layer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: block;
+        width: 600px;
+        height: 600px;
+        pointer-events: none;
       }
 
       #tile-float {
@@ -247,6 +260,33 @@
       }
       .corps-btn-new { background: #d4c4a8; font-weight: bold; }
       .corps-btn-standby { background: #e8dcc8; }
+      .corps-btn-standby.selected {
+        outline: 2px solid #8b3a3a;
+        background: #dcc8a8;
+      }
+
+      #corps-command-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.35rem 0.4rem;
+        margin-bottom: 0.35rem;
+        background: #d8ccb8;
+        border: 1px solid #8b7355;
+        border-radius: 3px;
+      }
+      #corps-command-bar[hidden] { display: none; }
+      .corps-cmd-label {
+        font-size: 0.75rem;
+        font-weight: bold;
+        margin-right: 0.25rem;
+        color: #3d3020;
+      }
+      #corps-command-bar button {
+        font-size: 0.72rem;
+        padding: 0.2rem 0.45rem;
+      }
 
       #layer-switcher {
         display: flex;
@@ -400,7 +440,10 @@
 
       <main id="map-stage">
         <div id="map-viewport">
-          <canvas id="map" width="600" height="600"></canvas>
+          <div id="map-stack">
+            <canvas id="map" width="600" height="600"></canvas>
+            <canvas id="counter-layer" width="600" height="600"></canvas>
+          </div>
         </div>
 
         <div id="corps-float" hidden>
@@ -433,7 +476,13 @@
             <span>小地图</span>
           </div>
           <div id="corps-panel">
-            <div class="corps-hint">选中己方单位后点「新编军队」· 单击待命详情 · 长按编入</div>
+            <div id="corps-command-bar" hidden>
+              <span class="corps-cmd-label">将军队</span>
+              <button type="button" data-cmd="train">训练</button>
+              <button type="button" data-cmd="defend">驻守筑壕</button>
+              <button type="button" data-cmd="cancel-march">取消行军</button>
+            </div>
+            <div class="corps-hint">短按选中 · 右键/长按移动 · 单击待命详情 · 长按待命编入</div>
             <div id="corps-grid"></div>
           </div>
           <div id="layer-switcher"></div>

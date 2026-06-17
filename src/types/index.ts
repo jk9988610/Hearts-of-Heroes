@@ -51,6 +51,12 @@ export interface Battalion {
   marchHoursLeft?: number
   inCombat?: boolean
   combatHoursLeft?: number
+  /** 驻守筑壕（军棋右区实心） */
+  dugIn?: boolean
+  /** 组织度 0..100 */
+  organization?: number
+  /** 装备度 0..100 */
+  equipment?: number
   /** @deprecated 旧档字段 */
   marchDaysLeft?: number
   combatDaysLeft?: number
@@ -130,7 +136,7 @@ export interface GeneratedMap {
   tileById: Record<string, MapTile>
 }
 
-export const SAVE_VERSION = '0.8.0'
+export const SAVE_VERSION = '0.85.0'
 export const DB_NAME = 'sanguo-save'
 export const DB_STORE = 'saves'
 export const SAVE_KEY = 'sanguo-save-v1'

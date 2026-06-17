@@ -4,8 +4,8 @@ import { fromTotalHours, HOURS_PER_DAY, totalHours } from './time-scale.ts'
 export type SpeedMultiplier = 1 | 2 | 5
 
 export interface TimeControllerOptions {
-  /** 每真实秒对应的游戏日数（基准 ×1 时为 1） */
-  daysPerRealSecond?: number
+  /** 每真实秒对应的游戏小时数（基准 ×1 时为 1，即 1 真实秒 = 1 游戏小时） */
+  hoursPerRealSecond?: number
   onHourTick: (clock: GameClock) => void
   onPauseChange?: (paused: boolean) => void
 }
@@ -13,7 +13,7 @@ export interface TimeControllerOptions {
 const MS_PER_REAL_SECOND = 1000
 
 export class TimeController {
-  private readonly daysPerRealSecond: number
+  private readonly hoursPerRealSecond: number
   private readonly onHourTick: (clock: GameClock) => void
   private readonly onPauseChange?: (paused: boolean) => void
 
@@ -27,7 +27,7 @@ export class TimeController {
   private running = false
 
   constructor(options: TimeControllerOptions) {
-    this.daysPerRealSecond = options.daysPerRealSecond ?? 1
+    this.hoursPerRealSecond = options.hoursPerRealSecond ?? 1
     this.onHourTick = options.onHourTick
     this.onPauseChange = options.onPauseChange
   }
@@ -105,8 +105,7 @@ export class TimeController {
   step(deltaMs: number): void {
     if (this.paused) return
 
-    const msPerGameDay = MS_PER_REAL_SECOND / (this.daysPerRealSecond * this.speed)
-    const msPerGameHour = msPerGameDay / HOURS_PER_DAY
+    const msPerGameHour = MS_PER_REAL_SECOND / (this.hoursPerRealSecond * this.speed)
     this.accumulatorMs += deltaMs
 
     while (this.accumulatorMs >= msPerGameHour) {

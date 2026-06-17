@@ -146,21 +146,43 @@ function pushRecentEvent(msg: string): void {
 
 function selectedPlayerTileName(): string | null {
   if (!save || !map) return null
-  const pf = playerFaction()
+  const tileId = resolveSelectedPlayerTileId()
+  if (!tileId) return null
+  return map.tileById[tileId]?.name ?? null
+}
 
+function resolveSelectedPlayerTileId(): string | undefined {
+  if (!save) return undefined
+  const pf = playerFaction()
+  if (selectedTileId && playerCanAct(save, selectedTileId, pf)) {
+    return selectedTileId
+  }
+  if (selectedBattalionId) {
+    const battalion = findBattalionById(save, selectedBattalionId)
+    if (
+      battalion &&
+      battalion.faction === pf &&
+      playerCanAct(save, battalion.tileId, pf)
+    ) {
+      return battalion.tileId
+    }
+  }
+  return undefined
+}
+
+function resolveSelectedPlayerBattalion(): ReturnType<typeof findBattalionById> {
+  if (!save) return null
+  const pf = playerFaction()
   if (selectedBattalionId) {
     const battalion = findBattalionById(save, selectedBattalionId)
     if (!battalion || battalion.faction !== pf) return null
-    const tile = map.tileById[battalion.tileId]
-    return tile?.name ?? null
+    if (battalion.inCombat || getMarchHoursLeft(battalion)) return null
+    return battalion
   }
-
-  if (!selectedTileId) return null
-  const tile = map.tileById[selectedTileId]
-  if (!tile || !playerCanAct(save, selectedTileId, pf)) return null
-  const battalion = findBattalionOnTile(save, selectedTileId)
-  if (!battalion || battalion.faction !== pf) return null
-  return tile.name
+  if (selectedTileId) {
+    return getSelectedBattalionForCorpsOp(save, selectedTileId, pf)
+  }
+  return null
 }
 
 function updateStatus(): void {
@@ -270,6 +292,7 @@ function renderMap(): void {
   if (useCounters) {
     const group = selectedArmyGroupId ? findArmyGroupById(save, selectedArmyGroupId) : null
     const counters = buildCounterDisplay(save, map, scale, {
+      playerFaction: playerFaction(),
       selectedBattalionId: selectedBattalionId ?? undefined,
       selectedCorpsId: selectedCorpsId ?? undefined,
       selectedCorpsIds: group ? getCorpsIdsInGroup(save, group) : undefined,
@@ -660,10 +683,12 @@ function bindShell(): void {
       onCreateArmyGroup: () => openArmyGroupModal(),
       getSelectedCorpsId: () => selectedCorpsId,
       onNewCorps: () => {
-        if (!save || !map || !selectedTileId) return
+        if (!save || !map) return
         const pf = playerFaction()
-        const tileName = map.tileById[selectedTileId]?.name ?? selectedTileId
-        const { attachedBattalion } = createStandbyCorps(save, pf, selectedTileId)
+        const tileId = resolveSelectedPlayerTileId()
+        if (!tileId) return
+        const tileName = map.tileById[tileId]?.name ?? tileId
+        const { attachedBattalion } = createStandbyCorps(save, pf, tileId)
         logger.log('system', `新编将军队（待命）@${tileName}`)
         const attachMsg = attachedBattalion ? `，收纳 ${attachedBattalion.designation}队` : ''
         alerts.show(`已登记待命将军队 @${tileName}${attachMsg}`, 'info', 3000)
@@ -684,9 +709,7 @@ function bindShell(): void {
       onStandbyLongPress: (corpsId) => {
         if (!save || !map) return
         const pf = playerFaction()
-        const battalion = selectedBattalionId
-          ? findBattalionById(save, selectedBattalionId)
-          : getSelectedBattalionForCorpsOp(save, selectedTileId, pf)
+        const battalion = resolveSelectedPlayerBattalion()
         if (!battalion) {
           alerts.show('请先在地图上选中己方千人队', 'warn', 2500)
           return
@@ -894,8 +917,8 @@ function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
 }
 
 function onMapCommand(clientX: number, clientY: number): void {
-  if (!map || !save || mapLayer !== 'military' || !selectedBattalionId) return
-  const battalion = findBattalionById(save, selectedBattalionId)
+  if (!map || !save || mapLayer !== 'military') return
+  const battalion = resolveSelectedPlayerBattalion()
   if (!battalion) return
 
   const tile = hitTestTile(canvas, map, clientX, clientY)

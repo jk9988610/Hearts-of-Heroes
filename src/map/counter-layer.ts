@@ -1,18 +1,30 @@
 import type { Battalion, FactionId, GameSave, GeneratedMap } from '../types/index.ts'
+import { assetUrl } from '../core/paths.ts'
+import { getFactionLabel } from '../core/factions.ts'
 import { getMarchHoursLeft } from '../core/combat.ts'
 import {
   countBattalionTroops,
   isBattalionUnderstrength,
 } from '../core/organization/helpers.ts'
 import { listAllBattalions } from '../core/organization/queries.ts'
-import { getFactionMarkerColor } from './army-display.ts'
 import { getMapLayout } from './generator.ts'
 
 /** 屏幕空间固定军棋尺寸（px），不随地图缩放变化 */
-export const COUNTER_WIDTH_PX = 52
-export const COUNTER_HEIGHT_PX = 22
+export const COUNTER_WIDTH_PX = 56
+export const COUNTER_HEIGHT_PX = 26
 export const COUNTER_STACK_GAP_PX = 2
 export const COUNTER_TILE_PADDING_PX = 4
+
+const UNIT_TYPE_ICON = '步'
+
+const FACTION_ICON_NAMES: Record<FactionId, string> = {
+  wei: '魏',
+  shu: '蜀',
+  wu: '吴',
+  neutral: '中立',
+}
+
+export type CounterStance = 'own' | 'ally' | 'neutral' | 'enemy'
 
 export interface CounterDisplayItem {
   battalionId: string
@@ -26,8 +38,11 @@ export interface CounterDisplayItem {
   organization: number
   equipment: number
   selected: boolean
+  stance: CounterStance
   status?: string
   stackIndex: number
+  /** 聚合后包含的其它千人队 id */
+  mergedBattalionIds?: string[]
 }
 
 export interface CounterBounds {
@@ -37,6 +52,20 @@ export interface CounterBounds {
   y: number
   w: number
   h: number
+}
+
+/** 相对玩家势力的军棋立场色 */
+export function getCounterStance(
+  unitFaction: FactionId,
+  playerFaction: FactionId,
+  tileOwner: FactionId,
+  alliedFactions: FactionId[] = [],
+): CounterStance {
+  if (unitFaction === playerFaction) return 'own'
+  if (unitFaction === 'neutral') return 'neutral'
+  if (alliedFactions.includes(unitFaction)) return 'ally'
+  if (tileOwner === 'neutral' && unitFaction !== playerFaction) return 'neutral'
+  return 'enemy'
 }
 
 function aggregationKey(b: Battalion): string {
@@ -57,10 +86,15 @@ function gridDistance(
 
 /** 视口缩放越小，聚合范围越大（格数） */
 export function aggregationDistanceForScale(viewportScale: number): number {
-  if (viewportScale >= 1.0) return 0
-  if (viewportScale >= 0.85) return 1
-  if (viewportScale >= 0.75) return 2
+  if (viewportScale >= 1.15) return 0
+  if (viewportScale >= 0.95) return 1
+  if (viewportScale >= 0.8) return 2
   return 3
+}
+
+/** 缩放较小时，同格同类也合并显示 */
+export function shouldMergeSameTile(viewportScale: number): boolean {
+  return viewportScale < 1.15
 }
 
 export function computeCounterBounds(
@@ -128,10 +162,12 @@ export function buildCounterDisplay(
   map: GeneratedMap,
   viewportScale: number,
   options: {
+    playerFaction: FactionId
     selectedBattalionId?: string
     selectedCorpsId?: string
     selectedCorpsIds?: string[]
-  } = {},
+    alliedFactions?: FactionId[]
+  },
 ): CounterDisplayItem[] {
   const battalionById = new Map(listAllBattalions(save).map((b) => [b.id, b]))
   const items: CounterDisplayItem[] = []
@@ -145,6 +181,7 @@ export function buildCounterDisplay(
 
     const org = battalion.organization ?? Math.min(100, Math.round((troops / 1000) * 100))
     const equip = battalion.equipment ?? org
+    const tileOwner = save.tiles[displayTileId]?.owner ?? 'neutral'
 
     items.push({
       battalionId: battalion.id,
@@ -156,6 +193,12 @@ export function buildCounterDisplay(
       dugIn: Boolean(battalion.dugIn) && !isMarching,
       organization: org,
       equipment: equip,
+      stance: getCounterStance(
+        battalion.faction,
+        options.playerFaction,
+        tileOwner,
+        options.alliedFactions,
+      ),
       selected:
         options.selectedBattalionId === battalion.id ||
         (options.selectedCorpsId !== undefined && battalion.corpsId === options.selectedCorpsId) ||
@@ -168,6 +211,10 @@ export function buildCounterDisplay(
           : undefined,
       stackIndex: 0,
     })
+  }
+
+  if (shouldMergeSameTile(viewportScale)) {
+    mergeByTileAndKey(items, battalionById)
   }
 
   const aggDist = aggregationDistanceForScale(viewportScale)
@@ -183,7 +230,66 @@ export function buildCounterDisplay(
     perTile.set(item.tileId, n + 1)
   }
 
+  if (options.selectedBattalionId) {
+    applyAggregatedSelection(items, options.selectedBattalionId)
+  }
+
   return items
+}
+
+function applyAggregatedSelection(
+  items: CounterDisplayItem[],
+  selectedBattalionId: string,
+): void {
+  const direct = items.find((i) => i.battalionId === selectedBattalionId && !i.hidden)
+  if (direct) {
+    direct.selected = true
+    return
+  }
+  for (const item of items) {
+    if (item.hidden) continue
+    if (item.mergedBattalionIds?.includes(selectedBattalionId)) {
+      item.selected = true
+      return
+    }
+  }
+}
+
+function mergeCluster(cluster: CounterDisplayItem[]): void {
+  if (cluster.length <= 1) return
+  const rep = cluster.reduce((a, b) => (a.battalionId < b.battalionId ? a : b))
+  let sum = 0
+  const mergedIds: string[] = []
+  for (const c of cluster) {
+    sum += c.displayBattalionCount
+    mergedIds.push(c.battalionId)
+    if (c.battalionId !== rep.battalionId) {
+      c.hidden = true
+    }
+  }
+  rep.displayBattalionCount = sum
+  rep.mergedBattalionIds = mergedIds
+}
+
+function mergeByTileAndKey(
+  items: CounterDisplayItem[],
+  battalionById: Map<string, Battalion>,
+): void {
+  const groups = new Map<string, CounterDisplayItem[]>()
+
+  for (const item of items) {
+    if (item.hidden) continue
+    const battalion = battalionById.get(item.battalionId)
+    if (!battalion) continue
+    const key = `${item.tileId}|${aggregationKey(battalion)}`
+    const group = groups.get(key) ?? []
+    group.push(item)
+    groups.set(key, group)
+  }
+
+  for (const group of groups.values()) {
+    mergeCluster(group)
+  }
 }
 
 function aggregateCounters(
@@ -219,20 +325,17 @@ function aggregateCounters(
       }
     }
 
-    if (cluster.length <= 1) continue
-
-    const rep = cluster.reduce((a, b) =>
-      a.battalionId < b.battalionId ? a : b,
-    )
-    let sum = 0
-    for (const c of cluster) {
-      sum += c.displayBattalionCount
-      if (c.battalionId !== rep.battalionId) {
-        c.hidden = true
-      }
-    }
-    rep.displayBattalionCount = sum
+    mergeCluster(cluster)
   }
+}
+
+function createCounterIcon(src: string, alt: string, className: string): HTMLImageElement {
+  const img = document.createElement('img')
+  img.className = className
+  img.src = src
+  img.alt = alt
+  img.draggable = false
+  return img
 }
 
 export function renderCounterLayer(
@@ -251,17 +354,32 @@ export function renderCounterLayer(
     if (!bounds) continue
 
     const el = document.createElement('div')
-    el.className = 'map-counter'
+    el.className = `map-counter map-counter--${item.stance}`
     if (item.selected) el.classList.add('map-counter--selected')
     el.dataset.faction = item.faction
     el.dataset.battalionId = item.battalionId
     el.style.left = `${bounds.x}px`
     el.style.top = `${bounds.y}px`
-    el.style.backgroundColor = getFactionMarkerColor(item.faction)
 
     const left = document.createElement('div')
     left.className = 'map-counter-left'
-    left.innerHTML = `<span class="map-counter-type">步</span><span class="map-counter-des">${item.designation}</span>`
+    const unitIcon = createCounterIcon(
+      assetUrl(`assets/counter/units/${UNIT_TYPE_ICON}.svg`),
+      UNIT_TYPE_ICON,
+      'map-counter-unit-icon',
+    )
+    const factionIcon = createCounterIcon(
+      assetUrl(`assets/counter/factions/${FACTION_ICON_NAMES[item.faction]}.svg`),
+      getFactionLabel(item.faction),
+      'map-counter-faction-icon',
+    )
+    const unitRow = document.createElement('div')
+    unitRow.className = 'map-counter-left-top'
+    unitRow.append(unitIcon)
+    const factionRow = document.createElement('div')
+    factionRow.className = 'map-counter-left-bottom'
+    factionRow.append(factionIcon)
+    left.append(unitRow, factionRow)
 
     const mid = document.createElement('div')
     mid.className = 'map-counter-mid'

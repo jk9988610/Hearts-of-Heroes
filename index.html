@@ -124,33 +124,48 @@
       }
       .map-counter {
         position: absolute;
-        width: 52px;
-        height: 22px;
+        width: 56px;
+        height: 26px;
         box-sizing: border-box;
         border: 1px solid #2a2010;
         display: flex;
         pointer-events: auto;
         cursor: pointer;
-        opacity: 0.92;
+        opacity: 0.94;
       }
+      .map-counter--own { background: #2d7a4f; }
+      .map-counter--ally { background: #3a6ea8; }
+      .map-counter--neutral { background: #7a7570; }
+      .map-counter--enemy { background: #b33a3a; }
       .map-counter--selected {
         border: 2px solid #ffd700;
         box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
       }
       .map-counter-left {
-        width: 22%;
-        background: rgba(0, 0, 0, 0.15);
+        width: 24%;
         display: flex;
         flex-direction: column;
+        background: rgba(0, 0, 0, 0.12);
+        overflow: hidden;
+      }
+      .map-counter-left-top,
+      .map-counter-left-bottom {
+        flex: 1;
+        display: flex;
         align-items: center;
         justify-content: center;
-        line-height: 1;
-        color: #fff;
-        font-family: ui-monospace, monospace;
-        font-weight: bold;
+        min-height: 0;
       }
-      .map-counter-type { font-size: 8px; }
-      .map-counter-des { font-size: 7px; }
+      .map-counter-left-top {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+      }
+      .map-counter-unit-icon,
+      .map-counter-faction-icon {
+        width: 12px;
+        height: 12px;
+        object-fit: contain;
+        pointer-events: none;
+      }
       .map-counter-mid {
         flex: 1;
         padding: 1px 3px;

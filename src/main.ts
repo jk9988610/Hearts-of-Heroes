@@ -3,7 +3,6 @@ import { TimeController, type SpeedMultiplier } from './core/time.ts'
 import {
   applyKeyCityOwners,
   computeGridNeighbors,
-  drawMapPreview,
   generateMap,
   getInitialOwners,
   hitTestTile,
@@ -11,6 +10,8 @@ import {
 } from './map/generator.ts'
 import { buildArmyDisplay, getArmyForUi } from './map/army-display.ts'
 import { BattleAnimator } from './map/battle-animation.ts'
+import { drawMapLayer } from './core/map-layers/renderer.ts'
+import { DEFAULT_MAP_LAYER, type MapLayerId } from './core/map-layers/types.ts'
 import {
   createNewGame,
   deleteSave,
@@ -49,22 +50,33 @@ import { buildGameSnapshot, formatTileSelect } from './ui/debug-reports.ts'
 import { AlertBanner } from './ui/alerts.ts'
 import { bindMapViewport } from './ui/map-viewport.ts'
 import { showFactionModal } from './ui/faction-modal.ts'
+import { ModalHost } from './ui/modal-host.ts'
+import { bindMinimap } from './ui/minimap.ts'
+import { bindLayerSwitcher } from './ui/shell/layer-switcher.ts'
+import { CorpsBar } from './ui/shell/corps-bar.ts'
+import { CorpsDetailPlaceholder } from './ui/shell/corps-detail-placeholder.ts'
 import type { FactionId, GameSave, GeneratedMap, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
 const panelTileEl = document.querySelector<HTMLDivElement>('#panel-tile')!
 const panelArmyEl = document.querySelector<HTMLDivElement>('#panel-army')!
-const panelEventsEl = document.querySelector<HTMLDivElement>('#panel-events')!
-const policyListEl = document.querySelector<HTMLDivElement>('#policy-list')!
+const eventsPanelEl = document.querySelector<HTMLDivElement>('#events-panel')!
+const policyListEl = document.querySelector<HTMLDivElement>('#policy-list-modal')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
 const mapViewport = document.querySelector<HTMLDivElement>('#map-viewport')!
+const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap')!
+const dockBody = document.querySelector<HTMLDivElement>('#dock-body')!
+const dockToggle = document.querySelector<HTMLButtonElement>('#dock-toggle')!
 
 const logger = new DebugLogger({ container: logEl })
 const alerts = new AlertBanner(document.querySelector<HTMLDivElement>('#alert-banner')!)
 const battleAnimator = new BattleAnimator(() => renderMap())
+const corpsDetail = new CorpsDetailPlaceholder(
+  document.querySelector<HTMLDivElement>('#corps-float')!,
+)
 
-const MAX_RECENT_EVENTS = 5
+const MAX_RECENT_EVENTS = 8
 const recentEvents: string[] = []
 
 let map: GeneratedMap | null = null
@@ -74,6 +86,10 @@ let policies: PolicyConfig[] = []
 let selectedTileId: string | undefined
 let pendingFaction: FactionId = 'wei'
 let gameEnded = false
+let mapLayer: MapLayerId = DEFAULT_MAP_LAYER
+let corpsBar: CorpsBar | null = null
+let redrawMinimap: (() => void) | null = null
+let modalHost: ModalHost | null = null
 
 function playerFaction(): FactionId {
   return save?.playerFaction ?? pendingFaction
@@ -82,9 +98,18 @@ function playerFaction(): FactionId {
 function pushRecentEvent(msg: string): void {
   recentEvents.unshift(msg)
   if (recentEvents.length > MAX_RECENT_EVENTS) recentEvents.length = MAX_RECENT_EVENTS
-  if (panelEventsEl) {
-    panelEventsEl.textContent = recentEvents.length ? recentEvents.join('\n') : '暂无'
+  if (eventsPanelEl) {
+    eventsPanelEl.textContent = recentEvents.length ? recentEvents.join('\n') : '暂无'
   }
+}
+
+function selectedPlayerTileName(): string | null {
+  if (!save || !map || !selectedTileId) return null
+  const tile = map.tileById[selectedTileId]
+  if (!tile || !playerCanAct(save, selectedTileId, playerFaction())) return null
+  const army = findArmyOnTile(save, selectedTileId)
+  if (!army || army.faction !== playerFaction()) return null
+  return tile.name
 }
 
 function updateStatus(): void {
@@ -132,18 +157,21 @@ function renderMap(): void {
     }
   }
 
-  drawMapPreview(
+  drawMapLayer(mapLayer, {
     canvas,
     map,
+    save,
     owners,
-    selectedTileId,
+    highlightId: selectedTileId,
     neighborIds,
-    armyDisplay,
-    {
+    armyDisplay: mapLayer === 'military' ? armyDisplay : undefined,
+    militaryOptions: {
       troopOverrides,
       tileFlashes: battleAnimator.getTileFlashes(),
     },
-  )
+  })
+
+  redrawMinimap?.()
 }
 
 function renderPolicies(): void {
@@ -177,12 +205,13 @@ function updatePanel(): void {
   const tuntianBtn = document.querySelector<HTMLButtonElement>('#btn-tuntian')!
   const pf = playerFaction()
 
+  corpsBar?.refresh()
+
   if (!save || !selectedTileId || !map) {
     panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块`
     panelArmyEl.textContent = '—'
     recruitBtn.disabled = true
     tuntianBtn.disabled = true
-    renderPolicies()
     return
   }
 
@@ -194,7 +223,7 @@ function updatePanel(): void {
   const isPlayer = playerCanAct(save, selectedTileId, pf)
   const food = save.factions[pf]?.food ?? 0
 
-  panelTileEl.textContent = `${tile.name} · ${getFactionLabel(state.owner as FactionId)}${isPlayer ? ' · 己方' : ' · 非己方'}`
+  panelTileEl.textContent = `${tile.name} · ${getFactionLabel(state.owner as FactionId)}${isPlayer ? ' · 己方' : ''}`
 
   if (army) {
     const marchH = getMarchHoursLeft(army)
@@ -202,21 +231,20 @@ function updatePanel(): void {
     const parts = [`驻军 ${army.troops}`]
     if (marchH !== undefined && army.targetTileId) {
       const dest = map.tileById[army.targetTileId]?.name ?? army.targetTileId
-      parts.push(`行军→${dest}（${formatHoursBrief(marchH)}）`)
+      parts.push(`→${dest}（${formatHoursBrief(marchH)}）`)
     }
     if (army.inCombat && combatH !== undefined) {
-      parts.push(`战斗中（${formatHoursBrief(combatH)}）`)
+      parts.push(`战（${formatHoursBrief(combatH)}）`)
     }
     panelArmyEl.textContent = parts.join(' · ')
   } else {
-    panelArmyEl.textContent = '无驻军 · 点邻格调兵'
+    panelArmyEl.textContent = isPlayer ? '无驻军' : '—'
   }
 
-  recruitBtn.disabled = gameEnded || !isPlayer || !canRecruit(save, pf)
+  const onMilitary = mapLayer === 'military'
+  recruitBtn.disabled = gameEnded || !isPlayer || !canRecruit(save, pf) || !onMilitary
   tuntianBtn.disabled =
-    gameEnded || !isPlayer || !canBuildTuntian(save, selectedTileId) || food < TUNTIAN_COST
-
-  renderPolicies()
+    gameEnded || !isPlayer || !canBuildTuntian(save, selectedTileId) || food < TUNTIAN_COST || !onMilitary
 }
 
 function updateAlertsFromTick(battles: string[]): void {
@@ -260,7 +288,8 @@ async function startNewGame(faction: FactionId): Promise<void> {
   gameEnded = false
   alerts.hide()
   recentEvents.length = 0
-  panelEventsEl.textContent = '暂无'
+  eventsPanelEl.textContent = '暂无'
+  corpsDetail.hide()
 
   const terrainConfig = await loadTerrainConfig()
   const owners = getInitialOwners(map)
@@ -308,6 +337,67 @@ function handleVictory(): void {
   alert(`${title}！${result.reason}`)
 }
 
+function bindShell(): void {
+  modalHost = new ModalHost(document.querySelector('#modal-root')!)
+  modalHost.registerPanels([
+    { id: 'debug', title: '调试', element: document.querySelector('#modal-debug')! },
+    { id: 'policies', title: '国策', element: document.querySelector('#modal-policies')! },
+    { id: 'events', title: '近期事件', element: document.querySelector('#modal-events')! },
+  ])
+
+  document.querySelector('#btn-modal-debug')!.addEventListener('click', () => {
+    modalHost?.toggle('debug', '调试')
+  })
+  document.querySelector('#btn-modal-policies')!.addEventListener('click', () => {
+    renderPolicies()
+    modalHost?.toggle('policies', '国策')
+  })
+  document.querySelector('#btn-modal-events')!.addEventListener('click', () => {
+    modalHost?.toggle('events', '近期事件')
+  })
+
+  bindDebugToolbar(logger, {
+    onDump: dumpGameState,
+    filterButtonSelector: '#modal-debug [data-filter]',
+  })
+
+  dockToggle.addEventListener('click', () => {
+    const collapsed = dockBody.classList.toggle('collapsed')
+    dockToggle.textContent = collapsed ? '展开指挥台' : '收起指挥台'
+    if (!collapsed) redrawMinimap?.()
+  })
+
+  bindLayerSwitcher(document.querySelector('#layer-switcher')!, (layer) => {
+    mapLayer = layer
+    logger.log('map', `图层 → ${layer}`)
+    updatePanel()
+    renderMap()
+  })
+
+  corpsBar = new CorpsBar(
+    {
+      canCreateCorps: () => selectedPlayerTileName() !== null,
+      getSelectedTileName: () => selectedPlayerTileName(),
+      onNewCorps: (tileName) => {
+        logger.log('system', `新编将军队（待命）@${tileName}`)
+        alerts.show(`已登记待命将军队 @${tileName}`, 'info', 3000)
+      },
+      onStandbyClick: (corps) => {
+        corpsDetail.show(corps)
+      },
+      onStandbyLongPress: (corps) => {
+        const name = selectedPlayerTileName()
+        if (name) {
+          alerts.show(`v0.8：将把 @${name} 编入 ${corps.label}`, 'info', 2500)
+        } else {
+          alerts.show('请先在地图上选中己方单位', 'warn', 2500)
+        }
+      },
+    },
+    document.querySelector('#corps-grid')!,
+  )
+}
+
 async function bootstrap(): Promise<void> {
   document.querySelector('#app-version')!.textContent = `v${LOCAL_VERSION.version}`
 
@@ -315,7 +405,7 @@ async function bootstrap(): Promise<void> {
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  logger.log('map', `地图 ${map.tiles.length} 格 · 拖拽平移 · 滚轮/双指缩放`)
+  logger.log('map', `指挥台 v0.7 · 大地图 · 图层 · 小地图 · 将领栏原型`)
 
   const existing = await loadGame()
   if (existing) {
@@ -390,15 +480,16 @@ async function bootstrap(): Promise<void> {
   time.setClock(save!.date, save!.hour ?? 0)
   time.start()
 
+  bindShell()
   bindUi()
   updateStatus()
   updatePanel()
   renderMap()
-  logger.log('system', `就绪 v${LOCAL_VERSION.version} · Sprint A 体验打磨`)
+  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 指挥台骨架`)
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
-  if (!save || !map || gameEnded) return false
+  if (!save || !map || gameEnded || mapLayer !== 'military') return false
   const pf = playerFaction()
   const fromTile = map.tileById[fromTileId]
   if (!fromTile || !fromTile.neighbors.includes(toTileId)) {
@@ -436,6 +527,7 @@ function onMapTap(clientX: number, clientY: number): void {
   if (!tile) return
 
   if (
+    mapLayer === 'military' &&
     selectedTileId &&
     selectedTileId !== tile.id &&
     map.tileById[selectedTileId]?.neighbors.includes(tile.id)
@@ -464,15 +556,19 @@ function bindUi(): void {
   const recruitBtn = document.querySelector<HTMLButtonElement>('#btn-recruit')!
   const tuntianBtn = document.querySelector<HTMLButtonElement>('#btn-tuntian')!
 
-  bindDebugToolbar(logger, {
-    onDump: dumpGameState,
-    filterButtonSelector: '[data-filter]',
-  })
-
   bindMapViewport({
     viewport: mapViewport,
     canvas: canvas!,
     onTap: onMapTap,
+  })
+
+  redrawMinimap = bindMinimap({
+    canvas: minimapCanvas,
+    mainCanvas: canvas,
+    viewport: mapViewport,
+    map: map!,
+    getSave: () => save,
+    getHighlightTileId: () => selectedTileId,
   })
 
   pauseBtn.addEventListener('click', () => time?.togglePause())
@@ -528,7 +624,8 @@ function bindUi(): void {
     pendingFaction = save.playerFaction
     gameEnded = false
     recentEvents.length = 0
-    panelEventsEl.textContent = '暂无'
+    eventsPanelEl.textContent = '暂无'
+    corpsDetail.hide()
     time?.setClock(save.date, save.hour ?? 0)
     time?.resume()
     logger.log('system', `读档 ${formatGameTime(save.date, save.hour ?? 0)}`)

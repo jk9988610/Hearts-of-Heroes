@@ -2,113 +2,276 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>三国雄心</title>
     <style>
       * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
       body {
-        margin: 0;
         font-family: "Noto Serif SC", "Songti SC", serif;
-        background: #f4efe4;
+        background: #2a2418;
         color: #2c2416;
-      }
-      #app {
-        max-width: 960px;
-        margin: 0 auto;
-        padding: 1rem;
-      }
-      h1 { font-size: 1.25rem; margin: 0 0 0.5rem; }
-      .toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        align-items: center;
-        margin-bottom: 0.75rem;
+        overflow: hidden;
       }
       button {
-        padding: 0.35rem 0.75rem;
+        padding: 0.35rem 0.65rem;
         border: 1px solid #8b7355;
         background: #ebe3d4;
         cursor: pointer;
         font-family: inherit;
+        font-size: 0.82rem;
       }
-      button:disabled {
-        opacity: 0.45;
-        cursor: not-allowed;
-      }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
       button.active { background: #c9b896; font-weight: bold; }
-      .toolbar-label { font-size: 0.85rem; color: #5c4f3a; margin-right: 0.25rem; }
-      .debug-toolbar { margin-bottom: 0.5rem; }
-      #status { font-size: 0.9rem; margin-bottom: 0.5rem; }
-      #alert-banner {
-        margin-bottom: 0.5rem;
-        padding: 0.5rem 0.75rem;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        border: 1px solid #8b7355;
+
+      #app {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        max-width: none;
+        padding: 0;
       }
-      #alert-banner[data-type="info"] { background: #e8eef5; color: #2c3e50; }
-      #alert-banner[data-type="warn"] { background: #fff3cd; color: #7a4f01; border-color: #c9a227; }
-      #alert-banner[data-type="battle"] { background: #fde8e8; color: #8b0000; border-color: #c44; }
-      #alert-banner[data-type="success"] { background: #e8f5e9; color: #1b5e20; border-color: #6a9; }
-      #panel {
-        margin-bottom: 0.5rem;
-        padding: 0.5rem 0.75rem;
+
+      #top-bar {
+        flex: 0 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.5rem;
         background: #ebe3d4;
+        border-bottom: 2px solid #8b7355;
+        z-index: 20;
+      }
+      #top-bar .brand {
+        font-weight: bold;
+        font-size: 0.95rem;
+        margin-right: 0.25rem;
+      }
+      #status { font-size: 0.82rem; flex: 1; min-width: 120px; }
+      .top-group { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+      .top-sep { width: 1px; height: 1.2rem; background: #c9b896; margin: 0 0.15rem; }
+
+      #alert-banner {
+        flex: 0 0 auto;
+        margin: 0;
+        padding: 0.35rem 0.5rem;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #8b7355;
+        z-index: 19;
+      }
+      #alert-banner[hidden] { display: none; }
+      #alert-banner[data-type="info"] { background: #e8eef5; color: #2c3e50; }
+      #alert-banner[data-type="warn"] { background: #fff3cd; color: #7a4f01; }
+      #alert-banner[data-type="battle"] { background: #fde8e8; color: #8b0000; }
+      #alert-banner[data-type="success"] { background: #e8f5e9; color: #1b5e20; }
+
+      #map-stage {
+        flex: 1 1 auto;
+        min-height: 0;
+        position: relative;
+        background: #1a1610;
+      }
+      #map-viewport {
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background: #e8e0d0;
+        -webkit-overflow-scrolling: touch;
+        cursor: grab;
+      }
+      #map-viewport:active { cursor: grabbing; }
+      #map {
+        display: block;
+        width: 600px;
+        height: 600px;
+      }
+
+      #tile-float {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        width: min(280px, 42vw);
+        padding: 0.5rem 0.65rem;
+        background: rgba(244, 239, 228, 0.94);
         border: 1px solid #8b7355;
-        font-size: 0.9rem;
+        border-radius: 4px;
+        font-size: 0.82rem;
+        z-index: 12;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
       }
-      .panel-section {
-        margin-bottom: 0.5rem;
-        padding-bottom: 0.4rem;
+      #tile-float h4 { margin: 0 0 0.35rem; font-size: 0.85rem; }
+      #tile-float-actions { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+
+      #corps-float {
+        position: absolute;
+        top: 0.5rem;
+        left: 0.5rem;
+        width: min(300px, 46vw);
+        max-height: 45%;
+        overflow: auto;
+        padding: 0.5rem 0.65rem;
+        background: rgba(244, 239, 228, 0.96);
+        border: 1px solid #8b7355;
+        border-radius: 4px;
+        z-index: 13;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      }
+      #corps-float[hidden] { display: none; }
+      .corps-float-title { font-weight: bold; margin-bottom: 0.35rem; }
+      .corps-float-section { margin-bottom: 0.5rem; font-size: 0.82rem; }
+      .corps-float-hint { margin: 0.25rem 0 0; color: #5c4f3a; font-size: 0.78rem; }
+      .corps-float-btn { margin-top: 0.25rem; }
+      .battalion-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.25rem; }
+      .battalion-tags .tag {
+        padding: 0.15rem 0.4rem;
+        background: #e0d6c4;
+        border: 1px solid #c9b896;
+        font-size: 0.75rem;
+      }
+      .battalion-tags .tag.muted { opacity: 0.5; }
+      .corps-float-close {
+        float: right;
+        padding: 0.1rem 0.4rem;
+        font-size: 0.75rem;
+      }
+
+      #bottom-dock {
+        flex: 0 0 auto;
+        background: #ebe3d4;
+        border-top: 2px solid #8b7355;
+        z-index: 20;
+      }
+      #dock-toggle {
+        width: 100%;
+        border: none;
         border-bottom: 1px dashed #c9b896;
-      }
-      .panel-section:last-child { border-bottom: none; margin-bottom: 0; }
-      .panel-section h3 {
-        margin: 0 0 0.25rem;
+        background: #e0d6c4;
+        padding: 0.3rem;
         font-size: 0.8rem;
-        color: #5c4f3a;
-        font-weight: normal;
       }
-      #panel-events { font-size: 0.82rem; color: #4a3f2e; line-height: 1.45; }
-      #policy-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
-      #policy-list button { font-size: 0.85rem; }
-      #panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.25rem; }
+      #dock-body {
+        display: grid;
+        grid-template-columns: 150px 1fr auto;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        min-height: 56px;
+        max-height: 28vh;
+      }
+      #dock-body.collapsed { display: none; }
+
+      #minimap-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.2rem;
+      }
+      #minimap-wrap span { font-size: 0.72rem; color: #5c4f3a; }
+      #minimap {
+        border: 1px solid #8b7355;
+        cursor: crosshair;
+        display: block;
+      }
+
+      #corps-panel { min-width: 0; }
+      #corps-panel .corps-hint {
+        font-size: 0.72rem;
+        color: #5c4f3a;
+        margin-bottom: 0.25rem;
+      }
+      #corps-grid { display: flex; flex-direction: column; gap: 0.35rem; }
+      .corps-row {
+        display: flex;
+        flex-direction: row-reverse;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        gap: 0.35rem;
+      }
+      .corps-btn {
+        white-space: pre-line;
+        text-align: center;
+        min-width: 5.5rem;
+        min-height: 2.4rem;
+        font-size: 0.72rem;
+        line-height: 1.2;
+      }
+      .corps-btn-new { background: #d4c4a8; font-weight: bold; }
+      .corps-btn-standby { background: #e8dcc8; }
+
+      #layer-switcher {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        align-items: stretch;
+      }
+      #layer-switcher button { min-width: 4.5rem; }
+
+      /* Modals */
+      #modal-root[hidden] { display: none; }
+      #modal-root {
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+      }
+      .modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(20, 16, 10, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .modal-dialog {
+        background: #f4efe4;
+        border: 2px solid #8b7355;
+        border-radius: 6px;
+        width: min(520px, 96vw);
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        border-bottom: 1px solid #c9b896;
+      }
+      .modal-title { font-size: 1rem; margin: 0; }
+      .modal-close { padding: 0.2rem 0.5rem; }
+      .modal-body {
+        padding: 0.75rem;
+        overflow: auto;
+        flex: 1;
+      }
+      .modal-panel[hidden] { display: none; }
       #log {
         background: #1e1e1e;
         color: #d4d4d4;
         font-family: ui-monospace, monospace;
         font-size: 12px;
         padding: 0.75rem;
-        height: 200px;
+        height: min(50vh, 320px);
         overflow-y: auto;
         border-radius: 4px;
         white-space: pre-wrap;
       }
-      #map-viewport {
-        margin-top: 0.75rem;
-        overflow: auto;
-        max-height: min(72vh, 620px);
-        border: 1px solid #8b7355;
-        background: #e8e0d0;
-        -webkit-overflow-scrolling: touch;
-        cursor: grab;
+      .modal-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-bottom: 0.5rem;
       }
-      #map-viewport:active { cursor: grabbing; }
-      #map-hint {
-        font-size: 0.78rem;
-        color: #5c4f3a;
-        margin-top: 0.25rem;
+      .modal-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.3rem;
+        margin-bottom: 0.5rem;
       }
-      canvas {
-        display: block;
-        width: 600px;
-        height: 600px;
-        max-width: none;
-      }
-      @media (max-width: 640px) {
-        canvas { width: 720px; height: 720px; }
-      }
+      #policy-list-modal { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+      #events-panel { font-size: 0.82rem; line-height: 1.5; white-space: pre-wrap; }
+
       #faction-modal {
         position: fixed;
         inset: 0;
@@ -116,7 +279,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 100;
+        z-index: 300;
         padding: 1rem;
       }
       #faction-modal[hidden] { display: none; }
@@ -137,6 +300,11 @@
       }
       @media (max-width: 520px) {
         .faction-cards { grid-template-columns: 1fr; }
+        #dock-body {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto auto auto;
+        }
+        #layer-switcher { flex-direction: row; flex-wrap: wrap; }
       }
       .faction-card {
         display: flex;
@@ -151,68 +319,106 @@
       .faction-card.selected {
         border-color: #8b3a3a;
         background: #e8dcc8;
-        box-shadow: 0 0 0 1px #8b3a3a;
       }
       .faction-card .faction-name { font-size: 1.1rem; font-weight: bold; }
-      .faction-card .faction-blurb { font-size: 0.78rem; color: #5c4f3a; margin-top: 0.15rem; }
+      .faction-card .faction-blurb { font-size: 0.78rem; color: #5c4f3a; }
       .faction-actions { display: flex; gap: 0.5rem; justify-content: center; }
     </style>
   </head>
   <body>
     <div id="app">
-      <h1>三国雄心 <span id="app-version" style="font-size:0.75rem;color:#5c4f3a">v0.5</span></h1>
-      <div id="status">加载中…</div>
-      <div id="alert-banner" hidden></div>
-      <div class="toolbar">
-        <button id="btn-pause" type="button">暂停 (Space)</button>
-        <button id="btn-speed-1" type="button" data-speed="1">×1</button>
-        <button id="btn-speed-2" type="button" data-speed="2">×2</button>
-        <button id="btn-speed-5" type="button" data-speed="5">×5</button>
-        <button id="btn-save" type="button">手动存档</button>
-        <button id="btn-load" type="button">读档</button>
-        <button id="btn-new" type="button">新游戏</button>
-      </div>
-      <div id="panel">
-        <div class="panel-section">
-          <h3>地块</h3>
-          <div id="panel-tile">点击地图选择地块（可拖拽平移）</div>
+      <header id="top-bar">
+        <span class="brand">三国雄心 <span id="app-version">v0.7</span></span>
+        <span id="status">加载中…</span>
+        <div class="top-group">
+          <button id="btn-pause" type="button">暂停</button>
+          <button type="button" data-speed="1">×1</button>
+          <button type="button" data-speed="2">×2</button>
+          <button type="button" data-speed="5">×5</button>
+          <span class="top-sep"></span>
+          <button id="btn-save" type="button">存档</button>
+          <button id="btn-load" type="button">读档</button>
+          <button id="btn-new" type="button">新游戏</button>
+          <span class="top-sep"></span>
+          <button id="btn-modal-debug" type="button">调试</button>
+          <button id="btn-modal-policies" type="button">国策</button>
+          <button id="btn-modal-events" type="button">日志</button>
         </div>
-        <div class="panel-section">
-          <h3>军队</h3>
+      </header>
+
+      <div id="alert-banner" hidden></div>
+
+      <main id="map-stage">
+        <div id="map-viewport">
+          <canvas id="map" width="600" height="600"></canvas>
+        </div>
+
+        <div id="corps-float" hidden>
+          <button type="button" class="corps-float-close">关闭</button>
+          <div class="corps-float-title">将军队·待命</div>
+          <div class="corps-float-body"></div>
+        </div>
+
+        <aside id="tile-float">
+          <h4 id="panel-tile">点击地图选择地块</h4>
           <div id="panel-army">—</div>
-          <div id="panel-actions">
-            <button id="btn-recruit" type="button" disabled>募兵 (20粮→1000兵)</button>
-            <button id="btn-tuntian" type="button" disabled>屯田 (10粮)</button>
+          <div id="tile-float-actions">
+            <button id="btn-recruit" type="button" disabled>募兵</button>
+            <button id="btn-tuntian" type="button" disabled>屯田</button>
+          </div>
+        </aside>
+      </main>
+
+      <footer id="bottom-dock">
+        <button id="dock-toggle" type="button">展开指挥台</button>
+        <div id="dock-body" class="collapsed">
+          <div id="minimap-wrap">
+            <canvas id="minimap" width="140" height="140"></canvas>
+            <span>小地图</span>
+          </div>
+          <div id="corps-panel">
+            <div class="corps-hint">选中己方单位后点「新编军队」· 单击待命详情 · 长按编入(v0.8)</div>
+            <div id="corps-grid"></div>
+          </div>
+          <div id="layer-switcher"></div>
+        </div>
+      </footer>
+    </div>
+
+    <div id="modal-root" hidden>
+      <div class="modal-backdrop">
+        <div class="modal-dialog" role="dialog" aria-modal="true">
+          <div class="modal-header">
+            <h2 class="modal-title">面板</h2>
+            <button type="button" class="modal-close">关闭</button>
+          </div>
+          <div class="modal-body">
+            <div id="modal-debug" class="modal-panel" data-modal-title="调试" hidden>
+              <div class="modal-toolbar">
+                <button id="btn-log-clear" type="button">清空</button>
+                <button id="btn-log-dump" type="button">打印详情</button>
+                <button id="btn-log-copy" type="button">复制日志</button>
+                <button id="btn-version-check" type="button">检查版本</button>
+              </div>
+              <div class="modal-filters">
+                <button type="button" data-filter="tick" class="active">Tick</button>
+                <button type="button" data-filter="tile" class="active">地块</button>
+                <button type="button" data-filter="system" class="active">系统</button>
+                <button type="button" data-filter="map" class="active">地图</button>
+                <button type="button" data-filter="battle" class="active">战斗</button>
+                <button type="button" data-filter="debug" class="active">详情</button>
+              </div>
+              <div id="log"></div>
+            </div>
+            <div id="modal-policies" class="modal-panel" data-modal-title="国策" hidden>
+              <div id="policy-list-modal"></div>
+            </div>
+            <div id="modal-events" class="modal-panel" data-modal-title="近期事件" hidden>
+              <div id="events-panel">暂无</div>
+            </div>
           </div>
         </div>
-        <div class="panel-section">
-          <h3>国策</h3>
-          <div id="policy-list"></div>
-        </div>
-        <div class="panel-section">
-          <h3>近期事件</h3>
-          <div id="panel-events">暂无</div>
-        </div>
       </div>
-      <div class="toolbar debug-toolbar">
-        <span class="toolbar-label">调试</span>
-        <button id="btn-log-clear" type="button">清空日志</button>
-        <button id="btn-log-dump" type="button">打印详情</button>
-        <button id="btn-log-copy" type="button">复制日志</button>
-        <button id="btn-version-check" type="button">检查版本</button>
-        <span class="toolbar-label">筛选</span>
-        <button id="btn-filter-tick" type="button" data-filter="tick" class="active">Tick</button>
-        <button id="btn-filter-tile" type="button" data-filter="tile" class="active">地块</button>
-        <button id="btn-filter-system" type="button" data-filter="system" class="active">系统</button>
-        <button id="btn-filter-map" type="button" data-filter="map" class="active">地图</button>
-        <button id="btn-filter-battle" type="button" data-filter="battle" class="active">战斗</button>
-        <button id="btn-filter-debug" type="button" data-filter="debug" class="active">详情</button>
-      </div>
-      <div id="log"></div>
-      <div id="map-viewport">
-        <canvas id="map" width="600" height="600"></canvas>
-      </div>
-      <div id="map-hint">拖拽平移 · 滚轮或双指缩放地图</div>
     </div>
 
     <div id="faction-modal" hidden>

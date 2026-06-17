@@ -186,6 +186,11 @@ function drawMarchArrows(
   }
 }
 
+export interface DrawMapPreviewOptions {
+  troopOverrides?: Record<string, number>
+  tileFlashes?: Record<string, TileFlash>
+}
+
 export function drawMapPreview(
   canvas: HTMLCanvasElement,
   map: GeneratedMap,
@@ -193,10 +198,7 @@ export function drawMapPreview(
   highlightId?: string,
   neighborIds?: string[],
   armyDisplay?: ArmyDisplayState,
-  options?: {
-    troopOverrides?: Record<string, number>
-    tileFlashes?: Record<string, TileFlash>
-  },
+  options?: DrawMapPreviewOptions,
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return

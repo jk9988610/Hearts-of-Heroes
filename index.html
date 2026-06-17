@@ -117,11 +117,95 @@
         position: absolute;
         left: 0;
         top: 0;
-        display: block;
         width: 600px;
         height: 600px;
         pointer-events: none;
         z-index: 2;
+      }
+      .map-counter {
+        position: absolute;
+        width: 52px;
+        height: 22px;
+        box-sizing: border-box;
+        border: 1px solid #2a2010;
+        display: flex;
+        pointer-events: auto;
+        cursor: pointer;
+        opacity: 0.92;
+      }
+      .map-counter--selected {
+        border: 2px solid #ffd700;
+        box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+      }
+      .map-counter-left {
+        width: 22%;
+        background: rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+        color: #fff;
+        font-family: ui-monospace, monospace;
+        font-weight: bold;
+      }
+      .map-counter-type { font-size: 8px; }
+      .map-counter-des { font-size: 7px; }
+      .map-counter-mid {
+        flex: 1;
+        padding: 1px 3px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1px;
+        min-width: 0;
+      }
+      .map-counter-count {
+        color: #1a1208;
+        font-family: ui-monospace, monospace;
+        font-weight: bold;
+        font-size: 9px;
+        line-height: 1;
+      }
+      .map-counter-bar-track {
+        height: 3px;
+        background: rgba(0, 0, 0, 0.25);
+        border-radius: 1px;
+        overflow: hidden;
+      }
+      .map-counter-bar-fill {
+        height: 100%;
+        border-radius: 1px;
+      }
+      .map-counter-bar-fill--org { background: #4a7c59; }
+      .map-counter-bar-fill--equip { background: #6a5a8a; }
+      .map-counter-right {
+        width: 14%;
+        background: rgba(0, 0, 0, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .map-counter-trench {
+        width: 8px;
+        height: 8px;
+        border: 1.5px solid #e8dcc8;
+        border-radius: 50%;
+        box-sizing: border-box;
+      }
+      .map-counter-trench--filled {
+        background: #e8dcc8;
+        border-color: #e8dcc8;
+      }
+      .map-counter-status {
+        position: absolute;
+        top: 1px;
+        right: 10px;
+        color: #8b0000;
+        font-family: ui-monospace, monospace;
+        font-weight: bold;
+        font-size: 7px;
+        line-height: 1;
       }
 
       #tile-float {
@@ -524,7 +608,7 @@
           <div id="map-stack">
             <canvas id="map" width="600" height="600"></canvas>
             <div id="label-layer"></div>
-            <canvas id="counter-layer" width="600" height="600"></canvas>
+            <div id="counter-layer"></div>
           </div>
         </div>
 

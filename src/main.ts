@@ -9,7 +9,7 @@ import {
   loadTerrainConfig,
 } from './map/generator.ts'
 import { buildArmyDisplay, getArmyForUi } from './map/army-display.ts'
-import { buildCounterDisplay, drawCounterLayer, hitTestCounter } from './map/counter-layer.ts'
+import { buildCounterDisplay, hitTestCounter, renderCounterLayer } from './map/counter-layer.ts'
 import { renderLabelLayer } from './map/label-layer.ts'
 import { BattleAnimator } from './map/battle-animation.ts'
 import { drawMapLayer } from './core/map-layers/renderer.ts'
@@ -96,7 +96,7 @@ const eventsPanelEl = document.querySelector<HTMLDivElement>('#events-panel')!
 const policyTreeEl = document.querySelector<HTMLDivElement>('#policy-tree')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
 const labelLayer = document.querySelector<HTMLDivElement>('#label-layer')!
-const counterCanvas = document.querySelector<HTMLCanvasElement>('#counter-layer')!
+const counterLayer = document.querySelector<HTMLDivElement>('#counter-layer')!
 const mapStack = document.querySelector<HTMLDivElement>('#map-stack')!
 const mapViewport = document.querySelector<HTMLDivElement>('#map-viewport')!
 const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap')!
@@ -275,11 +275,10 @@ function renderMap(): void {
       selectedCorpsIds: group ? getCorpsIdsInGroup(save, group) : undefined,
     })
     lastCounterItems = counters
-    drawCounterLayer(counterCanvas, map, counters)
+    renderCounterLayer(counterLayer, canvas, map, counters, scale)
   } else {
     lastCounterItems = []
-    const ctx = counterCanvas.getContext('2d')
-    ctx?.clearRect(0, 0, counterCanvas.width, counterCanvas.height)
+    counterLayer.replaceChildren()
   }
 
   redrawMinimap?.()
@@ -915,7 +914,7 @@ function onMapTap(clientX: number, clientY: number): void {
   if (!map || !save) return
 
   if (mapLayer === 'military' && lastCounterItems.length > 0) {
-    const counter = hitTestCounter(counterCanvas, map, lastCounterItems, clientX, clientY)
+    const counter = hitTestCounter(counterLayer, canvas, map, lastCounterItems, mapViewportCtrl?.getScale() ?? 1, clientX, clientY)
     if (counter) {
       selectedBattalionId = counter.battalionId
       selectedTileId = undefined
@@ -968,7 +967,7 @@ function bindUi(): void {
     viewport: mapViewport,
     interactionRoot: mapStack,
     canvas: canvas!,
-    overlayElements: [labelLayer, counterCanvas],
+    overlayElements: [labelLayer, counterLayer],
     onTap: onMapTap,
     onLongPress: onMapCommand,
     onContextMenu: onMapCommand,

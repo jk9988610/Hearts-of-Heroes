@@ -83,6 +83,8 @@ export interface ArmyGroup {
   name?: string
   heroId?: string
   corpsIds: string[]
+  /** 将领栏中集团军按钮锚定的将军队 id */
+  anchorCorpsId?: string
 }
 
 /** @deprecated v0.8 起由 Battalion 替代，仅用于存档迁移 */

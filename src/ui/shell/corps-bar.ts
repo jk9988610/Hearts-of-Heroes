@@ -1,4 +1,3 @@
-const COLS_PER_ROW = 4
 const LONG_PRESS_MS = 500
 
 export interface CorpsBarItem {
@@ -10,6 +9,7 @@ export interface CorpsBarItem {
 export interface ArmyGroupBarItem {
   id: string
   label: string
+  anchorCorpsId: string
 }
 
 export interface CorpsBarCallbacks {
@@ -19,6 +19,7 @@ export interface CorpsBarCallbacks {
   onArmyGroupClick: (groupId: string) => void
   onCreateArmyGroup: () => void
   canCreateCorps: () => boolean
+  canShowCreateArmyGroup: () => boolean
   getStandbyCorps: () => CorpsBarItem[]
   getArmyGroups: () => ArmyGroupBarItem[]
   getSelectedCorpsId: () => string | null
@@ -42,54 +43,32 @@ export class CorpsBar {
     const groups = this.callbacks.getArmyGroups()
     this.gridEl.innerHTML = ''
 
-    if (groups.length > 0 || true) {
-      const agRow = document.createElement('div')
-      agRow.className = 'corps-row corps-row-ag'
-      const createAgBtn = document.createElement('button')
-      createAgBtn.type = 'button'
-      createAgBtn.className = 'corps-btn corps-btn-ag-new'
-      createAgBtn.textContent = '组建集团军'
-      createAgBtn.addEventListener('click', () => this.callbacks.onCreateArmyGroup())
-      agRow.appendChild(createAgBtn)
-      for (const g of [...groups].reverse()) {
-        agRow.appendChild(this.createArmyGroupBtn(g))
+    const track = document.createElement('div')
+    track.className = 'corps-bar-track'
+
+    if (this.callbacks.canShowCreateArmyGroup()) {
+      track.appendChild(this.createArmyGroupNewBtn())
+    }
+
+    for (const corps of standby) {
+      const group = groups.find((g) => g.anchorCorpsId === corps.id)
+      if (group) {
+        track.appendChild(this.createArmyGroupBtn(group))
       }
-      this.gridEl.appendChild(agRow)
+      track.appendChild(this.createStandbyBtn(corps))
     }
 
-    const rows: CorpsBarItem[][] = []
-    for (let i = 0; i < standby.length; i += COLS_PER_ROW) {
-      rows.push(standby.slice(i, i + COLS_PER_ROW))
-    }
+    track.appendChild(this.createNewBtn())
+    this.gridEl.appendChild(track)
+  }
 
-    const lastRow = rows[rows.length - 1]
-    const lastRowFull = lastRow && lastRow.length >= COLS_PER_ROW
-
-    if (lastRowFull) {
-      const newRow = document.createElement('div')
-      newRow.className = 'corps-row'
-      newRow.appendChild(this.createNewBtn())
-      this.gridEl.appendChild(newRow)
-    }
-
-    for (const row of rows) {
-      const rowEl = document.createElement('div')
-      rowEl.className = 'corps-row'
-      for (const corps of [...row].reverse()) {
-        rowEl.appendChild(this.createStandbyBtn(corps))
-      }
-      if (row === lastRow && !lastRowFull) {
-        rowEl.appendChild(this.createNewBtn())
-      }
-      this.gridEl.appendChild(rowEl)
-    }
-
-    if (rows.length === 0) {
-      const rowEl = document.createElement('div')
-      rowEl.className = 'corps-row'
-      rowEl.appendChild(this.createNewBtn())
-      this.gridEl.appendChild(rowEl)
-    }
+  private createArmyGroupNewBtn(): HTMLButtonElement {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'corps-btn corps-btn-ag-new'
+    btn.textContent = '组建集团军'
+    btn.addEventListener('click', () => this.callbacks.onCreateArmyGroup())
+    return btn
   }
 
   private createArmyGroupBtn(group: ArmyGroupBarItem): HTMLButtonElement {

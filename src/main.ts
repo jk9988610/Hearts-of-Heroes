@@ -51,7 +51,7 @@ import {
   getArmyGroupLabel,
   getCorpsIdsInGroup,
   getFactionArmyGroups,
-  getUnassignedCorps,
+  getEligibleCorpsForArmyGroup,
   trainArmyGroup,
 } from './core/organization/army-group-ops.ts'
 import { setHeroRegistry } from './core/organization/hero-assign.ts'
@@ -101,9 +101,6 @@ const counterLayer = document.querySelector<HTMLDivElement>('#counter-layer')!
 const mapStack = document.querySelector<HTMLDivElement>('#map-stack')!
 const mapViewport = document.querySelector<HTMLDivElement>('#map-viewport')!
 const minimapCanvas = document.querySelector<HTMLCanvasElement>('#minimap')!
-const dockBody = document.querySelector<HTMLDivElement>('#dock-body')!
-const dockToggle = document.querySelector<HTMLButtonElement>('#dock-toggle')!
-
 const logger = new DebugLogger({ container: logEl })
 const alerts = new AlertBanner(document.querySelector<HTMLDivElement>('#alert-banner')!)
 const battleAnimator = new BattleAnimator(() => renderMap())
@@ -545,12 +542,6 @@ function bindShell(): void {
     filterButtonSelector: '#modal-debug [data-filter]',
   })
 
-  dockToggle.addEventListener('click', () => {
-    const collapsed = dockBody.classList.toggle('collapsed')
-    dockToggle.textContent = collapsed ? '展开指挥台' : '收起指挥台'
-    if (!collapsed) redrawMinimap?.()
-  })
-
   bindLayerSwitcher(document.querySelector('#layer-switcher')!, (layer) => {
     mapLayer = layer
     logger.log('map', `图层 → ${layer}`)
@@ -707,9 +698,15 @@ function bindShell(): void {
         return getFactionArmyGroups(save, playerFaction()).map((g) => ({
           id: g.id,
           label: getArmyGroupLabel(g, heroes),
+          anchorCorpsId: g.anchorCorpsId ?? g.corpsIds[0] ?? '',
         }))
       },
       getSelectedArmyGroupId: () => selectedArmyGroupId,
+      canShowCreateArmyGroup: () => {
+        if (!save || !selectedCorpsId) return false
+        const corps = findCorpsById(save, selectedCorpsId)
+        return Boolean(corps?.standby && !corps.armyGroupId)
+      },
       onArmyGroupClick: (groupId) => {
         if (!save) return
         selectedArmyGroupId = groupId
@@ -720,7 +717,10 @@ function bindShell(): void {
         syncCorpsCommandBar()
         renderMap()
       },
-      onCreateArmyGroup: () => openArmyGroupModal(),
+      onCreateArmyGroup: () => {
+        if (!selectedCorpsId) return
+        openArmyGroupModal(selectedCorpsId)
+      },
       getSelectedCorpsId: () => selectedCorpsId,
       onNewCorps: () => {
         if (!save || !map) return
@@ -728,7 +728,10 @@ function bindShell(): void {
         const tileId = resolveSelectedPlayerTileId()
         if (!tileId) return
         const tileName = map.tileById[tileId]?.name ?? tileId
-        const { attachedBattalion } = createStandbyCorps(save, pf, tileId)
+        const { corps, attachedBattalion } = createStandbyCorps(save, pf, tileId)
+        selectedCorpsId = corps.id
+        selectedArmyGroupId = null
+        armyGroupDetail?.hide()
         logger.log('system', `新编将军队（待命）@${tileName}`)
         const attachMsg = attachedBattalion ? `，收纳 ${attachedBattalion.designation}队` : ''
         alerts.show(`已登记待命将军队 @${tileName}${attachMsg}`, 'info', 3000)
@@ -771,22 +774,32 @@ function bindShell(): void {
   )
 }
 
-function openArmyGroupModal(): void {
+function openArmyGroupModal(anchorCorpsId?: string): void {
   if (!save) return
   const modal = document.querySelector<HTMLDivElement>('#army-group-modal')!
   const listEl = document.querySelector<HTMLDivElement>('#army-group-pick-list')!
   const confirmBtn = document.querySelector<HTMLButtonElement>('#army-group-confirm')!
   const cancelBtn = document.querySelector<HTMLButtonElement>('#army-group-cancel')!
+  const hintEl = modal.querySelector('.corps-float-hint')
   const pf = playerFaction()
-  const corps = getUnassignedCorps(save, pf)
+  const corps = getEligibleCorpsForArmyGroup(save, pf)
   const selected = new Set<string>()
+  if (anchorCorpsId) selected.add(anchorCorpsId)
+
+  if (hintEl) {
+    hintEl.textContent = anchorCorpsId
+      ? '已锚定选中的待命将军队，再勾选至少 1 个其它将军队'
+      : '勾选 ≥2 个将军队'
+  }
 
   listEl.innerHTML = corps.length
     ? corps
-        .map(
-          (c) =>
-            `<label class="ag-pick-item"><input type="checkbox" value="${c.id}" /> ${getCorpsLabel(c, heroes)}</label>`,
-        )
+        .map((c) => {
+          const locked = c.id === anchorCorpsId
+          const checked = selected.has(c.id) ? 'checked' : ''
+          const disabled = locked ? 'disabled' : ''
+          return `<label class="ag-pick-item"><input type="checkbox" value="${c.id}" ${checked} ${disabled} /> ${getCorpsLabel(c, heroes)}${locked ? '（锚定）' : ''}</label>`
+        })
         .join('')
     : '<p class="corps-float-hint">无可编入的将军队</p>'
 
@@ -810,10 +823,11 @@ function openArmyGroupModal(): void {
   }
 
   confirmBtn.onclick = () => {
-    const result = createArmyGroup(save!, pf, [...selected])
+    const result = createArmyGroup(save!, pf, [...selected], anchorCorpsId)
     alerts.show(result.message, result.ok ? 'success' : 'warn', 3000)
     if (result.ok && result.group) {
       selectedArmyGroupId = result.group.id
+      selectedCorpsId = anchorCorpsId ?? null
       armyGroupDetail?.show(save!, result.group.id, heroes, pf)
       corpsBar?.refresh()
       syncCorpsCommandBar()

@@ -14,8 +14,12 @@ export function findArmyGroupById(save: GameSave, id: string): ArmyGroup | null 
   return null
 }
 
+export function getEligibleCorpsForArmyGroup(save: GameSave, faction: FactionId): Corps[] {
+  return (save.factions[faction]?.corps ?? []).filter((c) => !c.armyGroupId)
+}
+
 export function getUnassignedCorps(save: GameSave, faction: FactionId): Corps[] {
-  return (save.factions[faction]?.corps ?? []).filter((c) => !c.armyGroupId && !c.standby)
+  return getEligibleCorpsForArmyGroup(save, faction).filter((c) => !c.standby)
 }
 
 export function getCorpsIdsInGroup(save: GameSave, group: ArmyGroup): string[] {
@@ -28,6 +32,7 @@ export function createArmyGroup(
   save: GameSave,
   faction: FactionId,
   corpsIds: string[],
+  anchorCorpsId?: string,
 ): { ok: boolean; message: string; group?: ArmyGroup } {
   const f = save.factions[faction]
   if (!f) return { ok: false, message: '势力不存在' }
@@ -40,15 +45,17 @@ export function createArmyGroup(
     if (!corps || corps.faction !== faction) {
       return { ok: false, message: '将军队无效' }
     }
-    if (corps.standby) return { ok: false, message: '待命将军队不能编入集团军' }
     if (corps.armyGroupId) return { ok: false, message: `${getCorpsLabel(corps)} 已在集团军中` }
   }
+
+  const anchor = anchorCorpsId && corpsIds.includes(anchorCorpsId) ? anchorCorpsId : corpsIds[0]
 
   const group: ArmyGroup = {
     id: nextOrgId('ag'),
     faction,
     name: `集团军${f.armyGroups.length + 1}`,
     corpsIds: [...corpsIds],
+    anchorCorpsId: anchor,
   }
 
   for (const id of corpsIds) {

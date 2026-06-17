@@ -6,6 +6,7 @@ import {
   mergeBattalionCenturies,
 } from './organization/helpers.ts'
 import { findBattalionOnTile } from './organization/queries.ts'
+import { getCorpsCombatMultiplier } from './organization/hero-assign.ts'
 import { markTileCaptured } from './economy.ts'
 import { getDefensePolicyMultiplier, getMarchHours } from './policies.ts'
 import { COMBAT_HOURS, MARCH_HOURS } from './time-scale.ts'
@@ -42,9 +43,12 @@ export function resolveBattle(
   defenderTroops: number,
   terrain: TerrainType,
   defenderPolicyMult = 1,
+  attackerHeroMult = 1,
+  defenderHeroMult = 1,
 ): BattleResult {
-  const atkPower = calcCombatPower(attackerTroops, true, terrain)
-  const defPower = calcCombatPower(defenderTroops, false, terrain) * defenderPolicyMult
+  const atkPower = calcCombatPower(attackerTroops, true, terrain) * attackerHeroMult
+  const defPower =
+    calcCombatPower(defenderTroops, false, terrain) * defenderPolicyMult * defenderHeroMult
   const total = Math.max(atkPower + defPower, 1)
 
   let atkLossRate = 0.1 + 0.3 * (defPower / total)
@@ -176,11 +180,16 @@ export function applyBattleOutcome(
   const atkBefore = countBattalionTroops(attacker)
   const defBefore = countBattalionTroops(defender)
 
+  const atkHero = getCorpsCombatMultiplier(save, attacker.corpsId)
+  const defHero = getCorpsCombatMultiplier(save, defender.corpsId)
+
   const result = resolveBattle(
     atkBefore,
     defBefore,
     terrain,
     getDefensePolicyMultiplier(save, defender.faction),
+    atkHero.attack,
+    defHero.defense,
   )
 
   distributeCenturyLosses(attacker, atkBefore - result.attackerTroops)

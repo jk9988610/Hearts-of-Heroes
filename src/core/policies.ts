@@ -20,7 +20,13 @@ export function canActivatePolicy(
   const f = save.factions[faction]
   if (!f) return false
   if (hasPolicy(save, faction, policy.id)) return false
-  return f.food >= policy.cost
+  if (f.food < policy.cost) return false
+  if (policy.requires?.length) {
+    for (const req of policy.requires) {
+      if (!hasPolicy(save, faction, req)) return false
+    }
+  }
+  return true
 }
 
 export function activatePolicy(

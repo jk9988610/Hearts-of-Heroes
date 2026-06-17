@@ -264,6 +264,63 @@
         outline: 2px solid #8b3a3a;
         background: #dcc8a8;
       }
+      .corps-btn-ag { background: #c4d4e8; font-weight: bold; }
+      .corps-btn-ag.selected { outline: 2px solid #2d4a6c; background: #a8c0dc; }
+      .corps-btn-ag-new { background: #b8c8dc; }
+      .corps-row-ag { margin-bottom: 0.35rem; border-bottom: 1px dashed #c9b896; padding-bottom: 0.35rem; }
+
+      #policy-tree { display: flex; flex-direction: column; gap: 0.35rem; }
+      .policy-tree-tier { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+      .policy-tree-node {
+        border: 1px solid #8b7355;
+        background: #ebe3d4;
+        padding: 0.4rem 0.5rem;
+        min-width: 7rem;
+        text-align: center;
+        font-size: 0.78rem;
+      }
+      .policy-tree-node.owned { background: #d4e8d4; border-color: #4a7c59; }
+      .policy-tree-node.locked { opacity: 0.55; }
+      .policy-node-name { font-weight: bold; }
+      .policy-node-cost { color: #5c4f3a; font-size: 0.72rem; }
+      .policy-node-req { color: #8b3a3a; font-size: 0.68rem; }
+      .policy-tree-connector { text-align: center; color: #8b7355; font-size: 0.85rem; }
+      .policy-node-btn { margin-top: 0.25rem; width: 100%; font-size: 0.72rem; }
+
+      #army-group-float {
+        position: absolute;
+        top: 0.5rem;
+        left: min(320px, 48vw);
+        width: min(300px, 46vw);
+        max-height: 45%;
+        overflow: auto;
+        padding: 0.5rem 0.65rem;
+        background: rgba(244, 239, 228, 0.96);
+        border: 1px solid #5a6a8a;
+        border-radius: 4px;
+        z-index: 13;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      }
+      #army-group-float[hidden] { display: none; }
+
+      #army-group-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.45);
+      }
+      #army-group-modal[hidden] { display: none; }
+      #army-group-modal .ag-dialog {
+        background: #f4efe4;
+        border: 2px solid #8b7355;
+        padding: 1rem;
+        max-width: 360px;
+        width: 90%;
+      }
+      .ag-pick-item { display: block; margin: 0.25rem 0; font-size: 0.82rem; }
 
       #corps-command-bar {
         display: flex;
@@ -452,6 +509,12 @@
           <div class="corps-float-body"></div>
         </div>
 
+        <div id="army-group-float" hidden>
+          <button type="button" class="army-group-float-close corps-float-close">关闭</button>
+          <div class="army-group-float-title corps-float-title">集团军</div>
+          <div class="army-group-float-body corps-float-body"></div>
+        </div>
+
         <div id="battalion-float" hidden>
           <button type="button" class="battalion-float-close">关闭</button>
           <div class="battalion-float-title">编队详情</div>
@@ -516,12 +579,24 @@
               <div id="log"></div>
             </div>
             <div id="modal-policies" class="modal-panel" data-modal-title="国策" hidden>
-              <div id="policy-list-modal"></div>
+              <div id="policy-tree"></div>
             </div>
             <div id="modal-events" class="modal-panel" data-modal-title="近期事件" hidden>
               <div id="events-panel">暂无</div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="army-group-modal" hidden>
+      <div class="ag-dialog">
+        <h3>组建集团军</h3>
+        <p class="corps-float-hint">勾选 ≥2 个将军队（非待命、未在编）</p>
+        <div id="army-group-pick-list"></div>
+        <div class="faction-actions" style="margin-top:0.75rem">
+          <button type="button" id="army-group-confirm" disabled>确认组建</button>
+          <button type="button" id="army-group-cancel">取消</button>
         </div>
       </div>
     </div>

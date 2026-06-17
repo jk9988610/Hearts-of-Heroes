@@ -33,6 +33,10 @@ export interface PolicyConfig {
   name: string
   cost: number
   effect: PolicyEffect
+  /** 前置国策 id 列表 */
+  requires?: string[]
+  /** 树层级（0=根） */
+  tier?: number
 }
 
 export interface Century {
@@ -70,6 +74,15 @@ export interface Corps {
   battalionIds: string[]
   tileId: string
   standby: boolean
+  armyGroupId?: string
+}
+
+export interface ArmyGroup {
+  id: string
+  faction: FactionId
+  name?: string
+  heroId?: string
+  corpsIds: string[]
 }
 
 /** @deprecated v0.8 起由 Battalion 替代，仅用于存档迁移 */
@@ -102,6 +115,7 @@ export interface FactionState {
   food: number
   corps: Corps[]
   battalions: Battalion[]
+  armyGroups: ArmyGroup[]
   /** @deprecated v0.8 迁移后删除 */
   armies?: Army[]
   policies: string[]
@@ -136,7 +150,7 @@ export interface GeneratedMap {
   tileById: Record<string, MapTile>
 }
 
-export const SAVE_VERSION = '0.85.0'
+export const SAVE_VERSION = '0.9.0'
 export const DB_NAME = 'sanguo-save'
 export const DB_STORE = 'saves'
 export const SAVE_KEY = 'sanguo-save-v1'

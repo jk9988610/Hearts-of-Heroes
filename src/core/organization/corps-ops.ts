@@ -106,6 +106,9 @@ export function appointGeneral(
       other.heroId = undefined
     }
   }
+  for (const group of f.armyGroups ?? []) {
+    if (group.heroId === heroId) group.heroId = undefined
+  }
 
   corps.heroId = heroId
   return { ok: true, message: '将军已任命' }

@@ -1,4 +1,5 @@
 import type { FactionId, GameSave, GeneratedMap, MapTile, TileState } from '../types/index.ts'
+import { removeBattalion } from './combat.ts'
 import { TROOPS_PER_CENTURY } from './organization/constants.ts'
 import { countFactionCenturies, findMostUnderstrengthCentury } from './organization/helpers.ts'
 import { getFactionBattalions } from './organization/queries.ts'
@@ -56,6 +57,45 @@ export function processEconomyHour(save: GameSave, map: GeneratedMap, isNewDay: 
       faction.food -= centuryCount * ARMY_FOOD_PER_HOUR
     }
   }
+}
+
+/** 粮尽溃散：断粮势力每日流失一个百人队 */
+export function processStarvationDissolution(save: GameSave): string[] {
+  const events: string[] = []
+
+  for (const [factionId, faction] of Object.entries(save.factions)) {
+    if (faction.food > 0) continue
+
+    let target: { battalionId: string; centuryIndex: number; troops: number } | null = null
+
+    for (const battalion of faction.battalions) {
+      for (let i = battalion.centuries.length - 1; i >= 0; i--) {
+        const c = battalion.centuries[i]!
+        if (c.troops <= 0) continue
+        if (!target || c.troops < target.troops) {
+          target = { battalionId: battalion.id, centuryIndex: i, troops: c.troops }
+        }
+      }
+    }
+
+    if (!target) continue
+
+    const battalion = faction.battalions.find((b) => b.id === target!.battalionId)
+    if (!battalion) continue
+
+    const century = battalion.centuries[target.centuryIndex]!
+    const lost = century.troops
+    century.troops = 0
+
+    events.push(`${factionId} 粮尽溃散：${battalion.designation}队 -${lost}人`)
+
+    if (battalion.centuries.every((c) => c.troops <= 0)) {
+      removeBattalion(save, battalion)
+      events.push(`${factionId} ${battalion.designation}队 溃灭`)
+    }
+  }
+
+  return events
 }
 
 export function canBuildTuntian(save: GameSave, tileId: string): boolean {

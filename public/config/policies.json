@@ -3,18 +3,30 @@
     "id": "tuntian_plus",
     "name": "广开屯田",
     "cost": 30,
+    "tier": 0,
     "effect": { "type": "food_multiply", "value": 1.5 }
   },
   {
     "id": "iron_army",
     "name": "坚甲厉兵",
     "cost": 40,
+    "tier": 1,
+    "requires": ["tuntian_plus"],
     "effect": { "type": "defense_multiply", "value": 1.2 }
   },
   {
     "id": "fast_march",
     "name": "急行军",
     "cost": 25,
+    "tier": 0,
     "effect": { "type": "march_speed", "value": 0.5 }
+  },
+  {
+    "id": "war_footing",
+    "name": "全面动员",
+    "cost": 50,
+    "tier": 1,
+    "requires": ["fast_march"],
+    "effect": { "type": "recruit_discount", "value": 0.8 }
   }
 ]

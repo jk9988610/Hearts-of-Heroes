@@ -17,6 +17,11 @@ export function getVisibleTileIds(
   const visible = new Set<string>()
   const layout = getMapLayout(canvas, map)
   const { cell, offsetX, offsetY } = layout
+  const rect = canvas.getBoundingClientRect()
+  const scaleX = rect.width / canvas.width
+  const scaleY = rect.height / canvas.height
+  const cellW = cell * scaleX
+  const cellH = cell * scaleY
 
   const left = viewport.scrollLeft
   const top = viewport.scrollTop
@@ -24,14 +29,14 @@ export function getVisibleTileIds(
   const bottom = top + viewport.clientHeight
 
   for (const tile of map.tiles) {
-    const px = offsetX + tile.gridX * cell
-    const py = offsetY + tile.gridY * cell
-    const margin = cell
+    const px = (offsetX + tile.gridX * cell) * scaleX
+    const py = (offsetY + tile.gridY * cell) * scaleY
+    const margin = cellW
 
     if (
-      px + cell + margin >= left &&
+      px + cellW + margin >= left &&
       px - margin <= right &&
-      py + cell + margin >= top &&
+      py + cellH + margin >= top &&
       py - margin <= bottom
     ) {
       visible.add(tile.id)

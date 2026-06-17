@@ -10,6 +10,7 @@ import {
   type ArmyDisplayState,
   type MarchArrow,
 } from './army-display.ts'
+import type { TileFlash } from './battle-animation.ts'
 
 const TERRAIN_TYPES: TerrainType[] = ['plain', 'mountain', 'river']
 
@@ -192,6 +193,10 @@ export function drawMapPreview(
   highlightId?: string,
   neighborIds?: string[],
   armyDisplay?: ArmyDisplayState,
+  options?: {
+    troopOverrides?: Record<string, number>
+    tileFlashes?: Record<string, TileFlash>
+  },
 ): void {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
@@ -239,6 +244,15 @@ export function drawMapPreview(
       ctx.lineWidth = 1
       ctx.strokeRect(px, py, cell, cell)
     }
+
+    const flash = options?.tileFlashes?.[tile.id]
+    if (flash) {
+      const alpha = 0.55 * (1 - flash.progress)
+      if (flash.kind === 'capture') ctx.fillStyle = `rgba(200, 40, 40, ${alpha})`
+      else if (flash.kind === 'defend') ctx.fillStyle = `rgba(40, 100, 200, ${alpha})`
+      else ctx.fillStyle = `rgba(180, 140, 40, ${alpha})`
+      ctx.fillRect(px, py, cell, cell)
+    }
   }
 
   if (armyDisplay?.arrows.length) {
@@ -267,11 +281,13 @@ export function drawMapPreview(
       ctx.fill()
 
       if (hasTroops) {
+        const troops =
+          options?.troopOverrides?.[tile.id] ?? army.troops
         ctx.fillStyle = '#1a1208'
         ctx.font = `bold ${Math.max(10, cell * 0.2)}px ui-monospace, monospace`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'bottom'
-        ctx.fillText(String(army.troops), px + cell / 2, py + cell - 2)
+        ctx.fillText(String(troops), px + cell / 2, py + cell - 2)
       }
 
       if (army.status) {

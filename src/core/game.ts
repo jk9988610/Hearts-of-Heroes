@@ -23,6 +23,7 @@ export interface TickEvents {
   ai: AiAction[]
   marches: string[]
   battles: string[]
+  battleFlashes: { tileId: string; kind: 'capture' | 'defend' | 'stalemate' }[]
 }
 
 export function gameHourTick(
@@ -30,7 +31,7 @@ export function gameHourTick(
   map: GeneratedMap,
   ctx: TickContext,
 ): TickEvents {
-  const events: TickEvents = { ai: [], marches: [], battles: [] }
+  const events: TickEvents = { ai: [], marches: [], battles: [], battleFlashes: [] }
   const isNewDay = ctx.clock.hour === 0
 
   save.date = ctx.clock.day
@@ -148,12 +149,15 @@ function processCombat(
       events.battles.push(
         `${attacker.faction} 攻克 ${tileName}（剩${result.attackerTroops}兵）`,
       )
+      events.battleFlashes.push({ tileId, kind: 'capture' })
     } else if (attacker.troops <= 0) {
       events.battles.push(`${defender.faction} 守住 ${tileName}`)
+      events.battleFlashes.push({ tileId, kind: 'defend' })
     } else {
       events.battles.push(
         `${tileName} 战平：攻${result.attackerTroops} / 守${result.defenderTroops}`,
       )
+      events.battleFlashes.push({ tileId, kind: 'stalemate' })
     }
   }
 }

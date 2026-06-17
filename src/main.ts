@@ -10,6 +10,7 @@ import {
   loadTerrainConfig,
 } from './map/generator.ts'
 import { buildArmyDisplay, getArmyForUi } from './map/army-display.ts'
+import { BattleAnimator } from './map/battle-animation.ts'
 import {
   createNewGame,
   deleteSave,
@@ -39,7 +40,7 @@ import {
 } from './core/policies.ts'
 import { checkVictory, getPlayerStatusHints } from './core/victory.ts'
 import { LOCAL_VERSION } from './core/version.ts'
-import { getFactionLabel, PLAYABLE_FACTIONS } from './core/factions.ts'
+import { getFactionLabel } from './core/factions.ts'
 import { formatGameTime, formatHoursBrief } from './core/time-scale.ts'
 import { getVisibleTileIds } from './core/visibility.ts'
 import { DebugLogger } from './ui/debug.ts'
@@ -47,17 +48,24 @@ import { bindDebugToolbar, logTickEvents } from './ui/debug-toolbar.ts'
 import { buildGameSnapshot, formatTileSelect } from './ui/debug-reports.ts'
 import { AlertBanner } from './ui/alerts.ts'
 import { bindMapViewport } from './ui/map-viewport.ts'
+import { showFactionModal } from './ui/faction-modal.ts'
 import type { FactionId, GameSave, GeneratedMap, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
-const panelInfoEl = document.querySelector<HTMLDivElement>('#panel-info')!
+const panelTileEl = document.querySelector<HTMLDivElement>('#panel-tile')!
+const panelArmyEl = document.querySelector<HTMLDivElement>('#panel-army')!
+const panelEventsEl = document.querySelector<HTMLDivElement>('#panel-events')!
 const policyListEl = document.querySelector<HTMLDivElement>('#policy-list')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
 const mapViewport = document.querySelector<HTMLDivElement>('#map-viewport')!
 
 const logger = new DebugLogger({ container: logEl })
 const alerts = new AlertBanner(document.querySelector<HTMLDivElement>('#alert-banner')!)
+const battleAnimator = new BattleAnimator(() => renderMap())
+
+const MAX_RECENT_EVENTS = 5
+const recentEvents: string[] = []
 
 let map: GeneratedMap | null = null
 let save: GameSave | null = null
@@ -69,6 +77,14 @@ let gameEnded = false
 
 function playerFaction(): FactionId {
   return save?.playerFaction ?? pendingFaction
+}
+
+function pushRecentEvent(msg: string): void {
+  recentEvents.unshift(msg)
+  if (recentEvents.length > MAX_RECENT_EVENTS) recentEvents.length = MAX_RECENT_EVENTS
+  if (panelEventsEl) {
+    panelEventsEl.textContent = recentEvents.length ? recentEvents.join('\n') : '暂无'
+  }
 }
 
 function updateStatus(): void {
@@ -105,21 +121,29 @@ function renderMap(): void {
       ? getNeighborTiles(map.tileById[selectedTileId]).map((t) => t.id)
       : []
     : undefined
+
+  const armyDisplay = buildArmyDisplay(save)
+  battleAnimator.syncTargets(armyDisplay)
+
+  const troopOverrides: Record<string, number> = {}
+  for (const [tileId, overlay] of Object.entries(armyDisplay.overlays)) {
+    if (overlay.troops > 0) {
+      troopOverrides[tileId] = battleAnimator.getDisplayTroops(tileId, overlay.troops)
+    }
+  }
+
   drawMapPreview(
     canvas,
     map,
     owners,
     selectedTileId,
     neighborIds,
-    buildArmyDisplay(save),
+    armyDisplay,
+    {
+      troopOverrides,
+      tileFlashes: battleAnimator.getTileFlashes(),
+    },
   )
-}
-
-function syncFactionButtons(): void {
-  const pf = playerFaction()
-  document.querySelectorAll<HTMLButtonElement>('[data-faction]').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.faction === pf)
-  })
 }
 
 function renderPolicies(): void {
@@ -154,7 +178,8 @@ function updatePanel(): void {
   const pf = playerFaction()
 
   if (!save || !selectedTileId || !map) {
-    panelInfoEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块（可拖拽平移）`
+    panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块`
+    panelArmyEl.textContent = '—'
     recruitBtn.disabled = true
     tuntianBtn.disabled = true
     renderPolicies()
@@ -169,14 +194,23 @@ function updatePanel(): void {
   const isPlayer = playerCanAct(save, selectedTileId, pf)
   const food = save.factions[pf]?.food ?? 0
 
-  const lines = [
-    `${tile.name} · ${getFactionLabel(state.owner as FactionId)}`,
-    army
-      ? `驻军 ${army.troops}${(() => { const mh = getMarchHoursLeft(army); return mh && army.targetTileId ? ` · 行→${army.targetTileId}(${formatHoursBrief(mh)})` : '' })()}${army.inCombat ? ` · 战${formatHoursBrief(getCombatHoursLeft(army) ?? 0)}` : ''}`
-      : '无驻军',
-    isPlayer ? '己方 · 点邻格调兵' : '非己方',
-  ]
-  panelInfoEl.textContent = lines.join(' | ')
+  panelTileEl.textContent = `${tile.name} · ${getFactionLabel(state.owner as FactionId)}${isPlayer ? ' · 己方' : ' · 非己方'}`
+
+  if (army) {
+    const marchH = getMarchHoursLeft(army)
+    const combatH = getCombatHoursLeft(army)
+    const parts = [`驻军 ${army.troops}`]
+    if (marchH !== undefined && army.targetTileId) {
+      const dest = map.tileById[army.targetTileId]?.name ?? army.targetTileId
+      parts.push(`行军→${dest}（${formatHoursBrief(marchH)}）`)
+    }
+    if (army.inCombat && combatH !== undefined) {
+      parts.push(`战斗中（${formatHoursBrief(combatH)}）`)
+    }
+    panelArmyEl.textContent = parts.join(' · ')
+  } else {
+    panelArmyEl.textContent = '无驻军 · 点邻格调兵'
+  }
 
   recruitBtn.disabled = gameEnded || !isPlayer || !canRecruit(save, pf)
   tuntianBtn.disabled =
@@ -220,10 +254,14 @@ function dumpGameState(): void {
   logger.report('debug', '游戏状态快照', lines)
 }
 
-async function startNewGame(): Promise<void> {
+async function startNewGame(faction: FactionId): Promise<void> {
   if (!map) return
+  pendingFaction = faction
   gameEnded = false
   alerts.hide()
+  recentEvents.length = 0
+  panelEventsEl.textContent = '暂无'
+
   const terrainConfig = await loadTerrainConfig()
   const owners = getInitialOwners(map)
   applyKeyCityOwners(terrainConfig, owners)
@@ -233,13 +271,26 @@ async function startNewGame(): Promise<void> {
   for (const h of heroes) {
     if (heroIdsByFaction[h.faction]) heroIdsByFaction[h.faction].push(h.id)
   }
-  save = createNewGame(owners, heroIdsByFaction, pendingFaction)
+  save = createNewGame(owners, heroIdsByFaction, faction)
   await saveGame(save)
   time?.setClock(0, 0)
   time?.resume()
   selectedTileId = undefined
-  syncFactionButtons()
-  alerts.show(`新游戏开始，你操控${getFactionLabel(pendingFaction)}`, 'success', 4000)
+  alerts.show(`新游戏开始，你操控${getFactionLabel(faction)}`, 'success', 4000)
+}
+
+async function promptNewGame(overwrite: boolean): Promise<void> {
+  const faction = await showFactionModal({
+    title: overwrite ? '开新局 · 选择势力' : '选择操控势力',
+    confirmLabel: overwrite ? '覆盖并开始' : '开始游戏',
+  })
+  if (!faction) return
+  if (overwrite) await deleteSave()
+  await startNewGame(faction)
+  logger.log('system', `新游戏 · 操控${getFactionLabel(faction)}`)
+  updateStatus()
+  updatePanel()
+  renderMap()
 }
 
 function handleVictory(): void {
@@ -253,6 +304,7 @@ function handleVictory(): void {
   const title = result.outcome === 'win' ? '胜利' : '失败'
   logger.report('system', title, [result.reason ?? '游戏结束'])
   alerts.show(`${title}：${result.reason}`, result.outcome === 'win' ? 'success' : 'warn', 15000)
+  pushRecentEvent(`${title}：${result.reason ?? ''}`)
   alert(`${title}！${result.reason}`)
 }
 
@@ -263,15 +315,24 @@ async function bootstrap(): Promise<void> {
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  logger.log('map', `地图 ${map.tiles.length} 格 · 拖拽平移 · 驻军箭头可视化`)
+  logger.log('map', `地图 ${map.tiles.length} 格 · 拖拽平移 · 滚轮/双指缩放`)
 
   const existing = await loadGame()
   if (existing) {
     save = migrateSave(existing)
     pendingFaction = save.playerFaction
-    logger.log('system', `读档 第${save.date}天 · 操控${getFactionLabel(save.playerFaction)}`)
+    logger.log(
+      'system',
+      `读档 ${formatGameTime(save.date, save.hour ?? 0)} · 操控${getFactionLabel(save.playerFaction)}`,
+    )
   } else {
-    await startNewGame()
+    const faction = await showFactionModal({ title: '选择操控势力' })
+    if (!faction) {
+      pendingFaction = 'wei'
+      await startNewGame('wei')
+    } else {
+      await startNewGame(faction)
+    }
     logger.log('system', `新游戏 · 操控${getFactionLabel(pendingFaction)}`)
   }
 
@@ -305,6 +366,12 @@ async function bootstrap(): Promise<void> {
         battles: events.battles,
       })
 
+      for (const m of events.marches) pushRecentEvent(m)
+      for (const b of events.battles) pushRecentEvent(b)
+      for (const flash of events.battleFlashes) {
+        battleAnimator.triggerFlash(flash.tileId, flash.kind)
+      }
+
       updateAlertsFromTick(events.battles)
 
       if (clock.hour === 0 && clock.day % 5 === 0) void saveGame(save)
@@ -313,6 +380,7 @@ async function bootstrap(): Promise<void> {
       updateStatus()
       updatePanel()
       renderMap()
+      battleAnimator.startContinuousLoop(() => buildArmyDisplay(save!))
     },
     onPauseChange: (paused) => {
       logger.log('system', paused ? '暂停' : '继续')
@@ -323,11 +391,10 @@ async function bootstrap(): Promise<void> {
   time.start()
 
   bindUi()
-  syncFactionButtons()
   updateStatus()
   updatePanel()
   renderMap()
-  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 小时制Tick · 玩家操控己方 AI视距优化`)
+  logger.log('system', `就绪 v${LOCAL_VERSION.version} · Sprint A 体验打磨`)
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
@@ -352,7 +419,9 @@ function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
   if (orderMarch(save, army, toTileId, MARCH_HOURS)) {
     const dest = map.tileById[toTileId]?.name ?? toTileId
     const hours = getMarchHoursLeft(army)!
-    logger.log('battle', `${getFactionLabel(pf)}军 ${fromTile.name} → ${dest}（${formatHoursBrief(hours)}）`)
+    const msg = `${getFactionLabel(pf)}军 ${fromTile.name} → ${dest}（${formatHoursBrief(hours)}）`
+    logger.log('battle', msg)
+    pushRecentEvent(msg)
     alerts.show(`军队前往 ${dest}，${formatHoursBrief(hours)}后抵达`, 'info', 4000)
     updatePanel()
     renderMap()
@@ -406,21 +475,6 @@ function bindUi(): void {
     onTap: onMapTap,
   })
 
-  for (const faction of PLAYABLE_FACTIONS) {
-    const btn = document.querySelector<HTMLButtonElement>(`[data-faction="${faction}"]`)
-    btn?.addEventListener('click', () => {
-      pendingFaction = faction
-      syncFactionButtons()
-      logger.log('system', `已选势力 ${getFactionLabel(faction)}（下次新游戏生效）`)
-      if (!save) return
-      alerts.show(
-        `已选${getFactionLabel(faction)}，点「新游戏」切换操控势力`,
-        'info',
-        4000,
-      )
-    })
-  }
-
   pauseBtn.addEventListener('click', () => time?.togglePause())
 
   document.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach((btn) => {
@@ -461,7 +515,7 @@ function bindUi(): void {
   saveBtn.addEventListener('click', async () => {
     if (!save) return
     await saveGame(save)
-    logger.log('system', `存档 第${save.date}天`)
+    logger.log('system', `存档 ${formatGameTime(save.date, save.hour ?? 0)}`)
   })
 
   loadBtn.addEventListener('click', async () => {
@@ -473,23 +527,18 @@ function bindUi(): void {
     save = migrateSave(loaded)
     pendingFaction = save.playerFaction
     gameEnded = false
+    recentEvents.length = 0
+    panelEventsEl.textContent = '暂无'
     time?.setClock(save.date, save.hour ?? 0)
     time?.resume()
-    syncFactionButtons()
-    logger.log('system', `读档 第${save.date}天`)
+    logger.log('system', `读档 ${formatGameTime(save.date, save.hour ?? 0)}`)
     updateStatus()
     updatePanel()
     renderMap()
   })
 
-  newBtn.addEventListener('click', async () => {
-    if (!confirm(`以${getFactionLabel(pendingFaction)}开新局？当前进度将被覆盖。`)) return
-    await deleteSave()
-    await startNewGame()
-    logger.log('system', '新游戏已开始')
-    updateStatus()
-    updatePanel()
-    renderMap()
+  newBtn.addEventListener('click', () => {
+    void promptNewGame(true)
   })
 
   window.addEventListener('keydown', (e) => {

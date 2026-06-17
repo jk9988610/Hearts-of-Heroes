@@ -58,9 +58,22 @@
         border: 1px solid #8b7355;
         font-size: 0.9rem;
       }
-      #policy-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.35rem; }
+      .panel-section {
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.4rem;
+        border-bottom: 1px dashed #c9b896;
+      }
+      .panel-section:last-child { border-bottom: none; margin-bottom: 0; }
+      .panel-section h3 {
+        margin: 0 0 0.25rem;
+        font-size: 0.8rem;
+        color: #5c4f3a;
+        font-weight: normal;
+      }
+      #panel-events { font-size: 0.82rem; color: #4a3f2e; line-height: 1.45; }
+      #policy-list { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.25rem; }
       #policy-list button { font-size: 0.85rem; }
-      #panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.35rem; }
+      #panel-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.25rem; }
       #log {
         background: #1e1e1e;
         color: #d4d4d4;
@@ -82,6 +95,11 @@
         cursor: grab;
       }
       #map-viewport:active { cursor: grabbing; }
+      #map-hint {
+        font-size: 0.78rem;
+        color: #5c4f3a;
+        margin-top: 0.25rem;
+      }
       canvas {
         display: block;
         width: 600px;
@@ -91,11 +109,58 @@
       @media (max-width: 640px) {
         canvas { width: 720px; height: 720px; }
       }
+      #faction-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(20, 16, 10, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        padding: 1rem;
+      }
+      #faction-modal[hidden] { display: none; }
+      .faction-dialog {
+        background: #f4efe4;
+        border: 2px solid #8b7355;
+        border-radius: 6px;
+        padding: 1.25rem;
+        max-width: 520px;
+        width: 100%;
+      }
+      .faction-dialog h2 { margin: 0 0 1rem; font-size: 1.1rem; text-align: center; }
+      .faction-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+      }
+      @media (max-width: 520px) {
+        .faction-cards { grid-template-columns: 1fr; }
+      }
+      .faction-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.2rem;
+        padding: 0.65rem;
+        text-align: left;
+        border: 2px solid #c9b896;
+        background: #ebe3d4;
+      }
+      .faction-card.selected {
+        border-color: #8b3a3a;
+        background: #e8dcc8;
+        box-shadow: 0 0 0 1px #8b3a3a;
+      }
+      .faction-card .faction-name { font-size: 1.1rem; font-weight: bold; }
+      .faction-card .faction-blurb { font-size: 0.78rem; color: #5c4f3a; margin-top: 0.15rem; }
+      .faction-actions { display: flex; gap: 0.5rem; justify-content: center; }
     </style>
   </head>
   <body>
     <div id="app">
-      <h1>三国雄心 <span id="app-version" style="font-size:0.75rem;color:#5c4f3a">v0.4</span></h1>
+      <h1>三国雄心 <span id="app-version" style="font-size:0.75rem;color:#5c4f3a">v0.5</span></h1>
       <div id="status">加载中…</div>
       <div id="alert-banner" hidden></div>
       <div class="toolbar">
@@ -107,20 +172,27 @@
         <button id="btn-load" type="button">读档</button>
         <button id="btn-new" type="button">新游戏</button>
       </div>
-      <div class="toolbar">
-        <span class="toolbar-label">操控势力</span>
-        <button type="button" data-faction="wei" class="active">魏</button>
-        <button type="button" data-faction="shu">蜀</button>
-        <button type="button" data-faction="wu">吴</button>
-        <span class="toolbar-label" style="margin-left:0.5rem">新游戏时生效</span>
-      </div>
       <div id="panel">
-        <div id="panel-info">点击地图选择地块</div>
-        <div id="panel-actions">
-          <button id="btn-recruit" type="button" disabled>募兵 (20粮→1000兵)</button>
-          <button id="btn-tuntian" type="button" disabled>屯田 (10粮)</button>
+        <div class="panel-section">
+          <h3>地块</h3>
+          <div id="panel-tile">点击地图选择地块（可拖拽平移）</div>
         </div>
-        <div id="policy-list"></div>
+        <div class="panel-section">
+          <h3>军队</h3>
+          <div id="panel-army">—</div>
+          <div id="panel-actions">
+            <button id="btn-recruit" type="button" disabled>募兵 (20粮→1000兵)</button>
+            <button id="btn-tuntian" type="button" disabled>屯田 (10粮)</button>
+          </div>
+        </div>
+        <div class="panel-section">
+          <h3>国策</h3>
+          <div id="policy-list"></div>
+        </div>
+        <div class="panel-section">
+          <h3>近期事件</h3>
+          <div id="panel-events">暂无</div>
+        </div>
       </div>
       <div class="toolbar debug-toolbar">
         <span class="toolbar-label">调试</span>
@@ -140,7 +212,42 @@
       <div id="map-viewport">
         <canvas id="map" width="600" height="600"></canvas>
       </div>
+      <div id="map-hint">拖拽平移 · 滚轮或双指缩放地图</div>
     </div>
+
+    <div id="faction-modal" hidden>
+      <div class="faction-dialog" role="dialog" aria-modal="true">
+        <h2 id="faction-modal-title">选择操控势力</h2>
+        <div class="faction-cards">
+          <button type="button" class="faction-card" data-faction-card="wei">
+            <span class="faction-name">魏</span>
+            <span class="faction-hero"></span>
+            <span class="faction-capital"></span>
+            <span class="faction-troops"></span>
+            <span class="faction-blurb"></span>
+          </button>
+          <button type="button" class="faction-card" data-faction-card="shu">
+            <span class="faction-name">蜀</span>
+            <span class="faction-hero"></span>
+            <span class="faction-capital"></span>
+            <span class="faction-troops"></span>
+            <span class="faction-blurb"></span>
+          </button>
+          <button type="button" class="faction-card" data-faction-card="wu">
+            <span class="faction-name">吴</span>
+            <span class="faction-hero"></span>
+            <span class="faction-capital"></span>
+            <span class="faction-troops"></span>
+            <span class="faction-blurb"></span>
+          </button>
+        </div>
+        <div class="faction-actions">
+          <button id="faction-modal-cancel" type="button">取消</button>
+          <button id="faction-modal-confirm" type="button">开始游戏</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -4,11 +4,15 @@ import {
   DB_STORE,
   SAVE_KEY,
   SAVE_VERSION,
-  type Army,
   type FactionId,
   type GameSave,
 } from '../types/index.ts'
-import { HOURS_PER_DAY } from './time-scale.ts'
+import {
+  createBattalion,
+  createCorps,
+  splitTroopsIntoBattalionChunks,
+} from './organization/helpers.ts'
+import { ensureOrganizationTiles, migrateArmiesToOrganization } from './organization/migrate.ts'
 
 let dbPromise: Promise<IDBPDatabase> | null = null
 
@@ -17,6 +21,8 @@ const STARTER_CAPITALS: { faction: FactionId; tileId: string }[] = [
   { faction: 'shu', tileId: 'chengdu' },
   { faction: 'wu', tileId: 'jianye' },
 ]
+
+const STARTER_TROOPS = 1500
 
 function getDb(): Promise<IDBPDatabase> {
   if (!dbPromise) {
@@ -59,32 +65,32 @@ export async function syncRemoteSave(_save: GameSave): Promise<boolean> {
   return false
 }
 
-function migrateArmyToHours(army: Army): void {
-  if (army.marchHoursLeft === undefined && army.marchDaysLeft !== undefined) {
-    army.marchHoursLeft = army.marchDaysLeft * HOURS_PER_DAY
-    delete army.marchDaysLeft
-  }
-  if (army.combatHoursLeft === undefined && army.combatDaysLeft !== undefined) {
-    army.combatHoursLeft = army.combatDaysLeft * HOURS_PER_DAY
-    delete army.combatDaysLeft
-  }
-}
-
-function addStarterArmies(save: GameSave): void {
+function addStarterOrganization(save: GameSave): void {
   for (const { faction, tileId } of STARTER_CAPITALS) {
     const f = save.factions[faction]
     if (!f || !save.tiles[tileId]) continue
 
-    const armyId = `army_${faction}_${tileId}`
-    if (f.armies.some((a) => a.id === armyId)) continue
+    const corpsId = `corps_${faction}_${tileId}`
+    if (f.corps.some((c) => c.id === corpsId)) continue
 
-    f.armies.push({
-      id: armyId,
-      faction,
-      troops: 1500,
-      tileId,
-    })
-    save.tiles[tileId].armyId = armyId
+    const chunks = splitTroopsIntoBattalionChunks(STARTER_TROOPS)
+    const battalions = chunks.map((troops, i) =>
+      createBattalion(faction, tileId, troops, {
+        id: `bat_${faction}_${tileId}_${i + 1}`,
+        corpsId,
+        designation: i + 1,
+      }),
+    )
+
+    f.corps.push(
+      createCorps(faction, tileId, {
+        id: corpsId,
+        standby: false,
+        battalionIds: battalions.map((b) => b.id),
+      }),
+    )
+    f.battalions.push(...battalions)
+    save.tiles[tileId].battalionId = battalions[0]!.id
   }
 }
 
@@ -99,9 +105,9 @@ export function createNewGame(
   }
 
   const factions: GameSave['factions'] = {
-    wei: { food: 100, armies: [], policies: [], heroes: heroIdsByFaction.wei ?? [] },
-    shu: { food: 100, armies: [], policies: [], heroes: heroIdsByFaction.shu ?? [] },
-    wu: { food: 100, armies: [], policies: [], heroes: heroIdsByFaction.wu ?? [] },
+    wei: { food: 100, corps: [], battalions: [], policies: [], heroes: heroIdsByFaction.wei ?? [] },
+    shu: { food: 100, corps: [], battalions: [], policies: [], heroes: heroIdsByFaction.shu ?? [] },
+    wu: { food: 100, corps: [], battalions: [], policies: [], heroes: heroIdsByFaction.wu ?? [] },
   }
 
   const save: GameSave = {
@@ -113,7 +119,7 @@ export function createNewGame(
     tiles,
   }
 
-  addStarterArmies(save)
+  addStarterOrganization(save)
   return save
 }
 
@@ -124,16 +130,18 @@ export function migrateSave(save: GameSave): GameSave {
   if (!save.playerFaction) save.playerFaction = 'wei'
 
   for (const faction of Object.values(save.factions)) {
-    for (const army of faction.armies) {
-      migrateArmyToHours(army)
-    }
+    faction.corps = faction.corps ?? []
+    faction.battalions = faction.battalions ?? []
   }
 
-  const totalArmies = Object.values(save.factions).reduce(
-    (n, f) => n + f.armies.length,
+  migrateArmiesToOrganization(save)
+  ensureOrganizationTiles(save)
+
+  const totalBattalions = Object.values(save.factions).reduce(
+    (n, f) => n + f.battalions.length,
     0,
   )
-  if (totalArmies === 0) addStarterArmies(save)
+  if (totalBattalions === 0) addStarterOrganization(save)
 
   save.version = SAVE_VERSION
   return save

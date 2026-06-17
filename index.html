@@ -135,6 +135,56 @@
         padding: 0.1rem 0.4rem;
         font-size: 0.75rem;
       }
+      .corps-battalion-tag {
+        cursor: pointer;
+        border: 1px solid #c9b896;
+        background: #e0d6c4;
+      }
+      .corps-battalion-tag:hover { background: #d4c8b0; }
+
+      #battalion-float {
+        position: absolute;
+        top: 0.5rem;
+        left: min(320px, 48vw);
+        width: min(340px, 50vw);
+        max-height: 50%;
+        overflow: auto;
+        padding: 0.5rem 0.65rem;
+        background: rgba(244, 239, 228, 0.96);
+        border: 1px solid #8b7355;
+        border-radius: 4px;
+        z-index: 14;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      }
+      #battalion-float[hidden] { display: none; }
+      .battalion-float-title { font-weight: bold; margin-bottom: 0.35rem; }
+      .battalion-float-close {
+        float: right;
+        padding: 0.1rem 0.4rem;
+        font-size: 0.75rem;
+      }
+      .battalion-detail-layout {
+        display: flex;
+        gap: 0.5rem;
+        font-size: 0.82rem;
+      }
+      .century-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.25rem;
+        flex: 1;
+      }
+      .century-block {
+        padding: 0.25rem;
+        text-align: center;
+        border: 1px solid #c9b896;
+        font-size: 0.75rem;
+      }
+      .century-block.full { background: #6b8e5a; color: #fff; }
+      .century-block.partial { background: #d4a84b; }
+      .century-block.empty { background: #ccc; opacity: 0.6; }
+      .century-cap { font-size: 0.65rem; opacity: 0.85; }
+      .battalion-stats p { margin: 0.2rem 0; }
 
       #bottom-dock {
         flex: 0 0 auto;
@@ -359,6 +409,12 @@
           <div class="corps-float-body"></div>
         </div>
 
+        <div id="battalion-float" hidden>
+          <button type="button" class="battalion-float-close">关闭</button>
+          <div class="battalion-float-title">编队详情</div>
+          <div class="battalion-float-body"></div>
+        </div>
+
         <aside id="tile-float">
           <h4 id="panel-tile">点击地图选择地块</h4>
           <div id="panel-army">—</div>
@@ -377,7 +433,7 @@
             <span>小地图</span>
           </div>
           <div id="corps-panel">
-            <div class="corps-hint">选中己方单位后点「新编军队」· 单击待命详情 · 长按编入(v0.8)</div>
+            <div class="corps-hint">选中己方单位后点「新编军队」· 单击待命详情 · 长按编入</div>
             <div id="corps-grid"></div>
           </div>
           <div id="layer-switcher"></div>

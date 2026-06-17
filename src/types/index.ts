@@ -35,6 +35,38 @@ export interface PolicyConfig {
   effect: PolicyEffect
 }
 
+export interface Century {
+  index: number
+  troops: number
+}
+
+export interface Battalion {
+  id: string
+  faction: FactionId
+  corpsId?: string
+  designation: number
+  centuries: Century[]
+  tileId: string
+  targetTileId?: string
+  marchHoursLeft?: number
+  inCombat?: boolean
+  combatHoursLeft?: number
+  /** @deprecated 旧档字段 */
+  marchDaysLeft?: number
+  combatDaysLeft?: number
+}
+
+export interface Corps {
+  id: string
+  faction: FactionId
+  name?: string
+  heroId?: string
+  battalionIds: string[]
+  tileId: string
+  standby: boolean
+}
+
+/** @deprecated v0.8 起由 Battalion 替代，仅用于存档迁移 */
 export interface Army {
   id: string
   faction: FactionId
@@ -53,6 +85,8 @@ export interface Army {
 
 export interface TileState {
   owner: FactionId
+  battalionId?: string
+  /** @deprecated v0.8 迁移后删除 */
   armyId?: string
   hasTuntian?: boolean
   occupationDays?: number
@@ -60,7 +94,10 @@ export interface TileState {
 
 export interface FactionState {
   food: number
-  armies: Army[]
+  corps: Corps[]
+  battalions: Battalion[]
+  /** @deprecated v0.8 迁移后删除 */
+  armies?: Army[]
   policies: string[]
   heroes: string[]
   starvingDays?: number
@@ -93,7 +130,7 @@ export interface GeneratedMap {
   tileById: Record<string, MapTile>
 }
 
-export const SAVE_VERSION = '0.5.0'
+export const SAVE_VERSION = '0.8.0'
 export const DB_NAME = 'sanguo-save'
 export const DB_STORE = 'saves'
 export const SAVE_KEY = 'sanguo-save-v1'

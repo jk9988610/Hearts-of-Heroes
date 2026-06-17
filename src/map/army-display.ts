@@ -1,10 +1,10 @@
-import type { Army, FactionId, GameSave } from '../types/index.ts'
+import type { Battalion, FactionId, GameSave } from '../types/index.ts'
 import {
-  findArmyOnTile,
-  findMarchingArmyToTile,
   getCombatHoursLeft,
   getMarchHoursLeft,
 } from '../core/combat.ts'
+import { countBattalionTroops } from '../core/organization/helpers.ts'
+import { findBattalionForUi, listAllBattalions } from '../core/organization/queries.ts'
 import { formatHoursBrief } from '../core/time-scale.ts'
 
 export type ArmyDisplayKind = 'garrison' | 'marching-in' | 'marching-out' | 'combat'
@@ -14,6 +14,7 @@ export interface ArmyOverlay {
   faction: FactionId
   kind: ArmyDisplayKind
   status?: string
+  designation?: number
 }
 
 export interface MarchArrow {
@@ -43,47 +44,54 @@ export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
   const overlays: Record<string, ArmyOverlay> = {}
   const arrows: MarchArrow[] = []
 
-  for (const faction of Object.values(save.factions)) {
-    for (const army of faction.armies) {
-      const marchH = getMarchHoursLeft(army)
-      const combatH = getCombatHoursLeft(army)
+  for (const battalion of listAllBattalions(save)) {
+    const troops = countBattalionTroops(battalion)
+    const marchH = getMarchHoursLeft(battalion)
+    const combatH = getCombatHoursLeft(battalion)
 
-      if (marchH !== undefined && marchH > 0 && army.targetTileId) {
-        const target = army.targetTileId
-        const from = army.tileId
+    if (marchH !== undefined && marchH > 0 && battalion.targetTileId) {
+      const target = battalion.targetTileId
+      const from = battalion.tileId
 
-        arrows.push({
-          fromTileId: from,
-          toTileId: target,
-          faction: army.faction,
-          label: formatHoursBrief(marchH),
-        })
+      arrows.push({
+        fromTileId: from,
+        toTileId: target,
+        faction: battalion.faction,
+        label: formatHoursBrief(marchH),
+      })
 
-        overlays[target] = {
-          troops: army.troops,
-          faction: army.faction,
-          kind: 'marching-in',
-          status: `→${formatHoursBrief(marchH)}`,
-        }
+      overlays[target] = {
+        troops,
+        faction: battalion.faction,
+        kind: 'marching-in',
+        status: `→${formatHoursBrief(marchH)}`,
+        designation: battalion.designation,
+      }
 
-        overlays[from] = {
-          troops: 0,
-          faction: army.faction,
-          kind: 'marching-out',
-          status: '出发',
-        }
-      } else if (army.inCombat && combatH !== undefined) {
-        overlays[army.tileId] = {
-          troops: army.troops,
-          faction: army.faction,
-          kind: 'combat',
-          status: `战${formatHoursBrief(combatH)}`,
-        }
+      overlays[from] = {
+        troops: 0,
+        faction: battalion.faction,
+        kind: 'marching-out',
+        status: '出发',
+      }
+    } else if (battalion.inCombat && combatH !== undefined) {
+      overlays[battalion.tileId] = {
+        troops,
+        faction: battalion.faction,
+        kind: 'combat',
+        status: `战${formatHoursBrief(combatH)}`,
+        designation: battalion.designation,
+      }
+    } else {
+      const existing = overlays[battalion.tileId]
+      if (existing) {
+        existing.troops += troops
       } else {
-        overlays[army.tileId] = {
-          troops: army.troops,
-          faction: army.faction,
+        overlays[battalion.tileId] = {
+          troops,
+          faction: battalion.faction,
           kind: 'garrison',
+          designation: battalion.designation,
         }
       }
     }
@@ -92,16 +100,12 @@ export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
   return { overlays, arrows }
 }
 
-export function getArmyForUi(save: GameSave, tileId: string): Army | null {
-  const stationed = findArmyOnTile(save, tileId)
-  if (stationed) return stationed
-  return findMarchingArmyToTile(save, tileId)
+export function getArmyForUi(save: GameSave, tileId: string): Battalion | null {
+  return findBattalionForUi(save, tileId)
 }
 
-export function listAllArmies(save: GameSave): Army[] {
-  const list: Army[] = []
-  for (const faction of Object.values(save.factions)) {
-    list.push(...faction.armies)
-  }
-  return list
+export function listAllArmies(save: GameSave): Battalion[] {
+  return listAllBattalions(save)
 }
+
+export type { Battalion }

@@ -21,12 +21,20 @@ import {
 } from './core/save.ts'
 import { gameHourTick, playerCanAct } from './core/game.ts'
 import {
-  findArmyOnTile,
+  findBattalionOnTile,
   getCombatHoursLeft,
   getMarchHoursLeft,
   MARCH_HOURS,
   orderMarch,
 } from './core/combat.ts'
+import { countBattalionTroops, getCorpsLabel } from './core/organization/helpers.ts'
+import {
+  attachBattalionToCorps,
+  appointGeneral,
+  createStandbyCorps,
+  getSelectedBattalionForCorpsOp,
+} from './core/organization/corps-ops.ts'
+import { getStandbyCorps } from './core/organization/queries.ts'
 import {
   buildTuntian,
   canBuildTuntian,
@@ -54,8 +62,9 @@ import { ModalHost } from './ui/modal-host.ts'
 import { bindMinimap } from './ui/minimap.ts'
 import { bindLayerSwitcher } from './ui/shell/layer-switcher.ts'
 import { CorpsBar } from './ui/shell/corps-bar.ts'
-import { CorpsDetailPlaceholder } from './ui/shell/corps-detail-placeholder.ts'
-import type { FactionId, GameSave, GeneratedMap, MapTile, PolicyConfig } from './types/index.ts'
+import { CorpsDetail } from './ui/shell/corps-detail.ts'
+import { BattalionDetail } from './ui/shell/battalion-detail.ts'
+import type { FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
@@ -72,9 +81,8 @@ const dockToggle = document.querySelector<HTMLButtonElement>('#dock-toggle')!
 const logger = new DebugLogger({ container: logEl })
 const alerts = new AlertBanner(document.querySelector<HTMLDivElement>('#alert-banner')!)
 const battleAnimator = new BattleAnimator(() => renderMap())
-const corpsDetail = new CorpsDetailPlaceholder(
-  document.querySelector<HTMLDivElement>('#corps-float')!,
-)
+let corpsDetail: CorpsDetail | null = null
+let battalionDetail: BattalionDetail | null = null
 
 const MAX_RECENT_EVENTS = 8
 const recentEvents: string[] = []
@@ -83,6 +91,7 @@ let map: GeneratedMap | null = null
 let save: GameSave | null = null
 let time: TimeController | null = null
 let policies: PolicyConfig[] = []
+let heroes: HeroConfig[] = []
 let selectedTileId: string | undefined
 let pendingFaction: FactionId = 'wei'
 let gameEnded = false
@@ -107,8 +116,8 @@ function selectedPlayerTileName(): string | null {
   if (!save || !map || !selectedTileId) return null
   const tile = map.tileById[selectedTileId]
   if (!tile || !playerCanAct(save, selectedTileId, playerFaction())) return null
-  const army = findArmyOnTile(save, selectedTileId)
-  if (!army || army.faction !== playerFaction()) return null
+  const battalion = findBattalionOnTile(save, selectedTileId)
+  if (!battalion || battalion.faction !== playerFaction()) return null
   return tile.name
 }
 
@@ -219,21 +228,22 @@ function updatePanel(): void {
   const state = save.tiles[selectedTileId]
   if (!tile || !state) return
 
-  const army = getArmyForUi(save, selectedTileId)
+  const battalion = getArmyForUi(save, selectedTileId)
   const isPlayer = playerCanAct(save, selectedTileId, pf)
   const food = save.factions[pf]?.food ?? 0
 
   panelTileEl.textContent = `${tile.name} · ${getFactionLabel(state.owner as FactionId)}${isPlayer ? ' · 己方' : ''}`
 
-  if (army) {
-    const marchH = getMarchHoursLeft(army)
-    const combatH = getCombatHoursLeft(army)
-    const parts = [`驻军 ${army.troops}`]
-    if (marchH !== undefined && army.targetTileId) {
-      const dest = map.tileById[army.targetTileId]?.name ?? army.targetTileId
+  if (battalion) {
+    const troops = countBattalionTroops(battalion)
+    const marchH = getMarchHoursLeft(battalion)
+    const combatH = getCombatHoursLeft(battalion)
+    const parts = [`${battalion.designation}队 ${troops}人`]
+    if (marchH !== undefined && battalion.targetTileId) {
+      const dest = map.tileById[battalion.targetTileId]?.name ?? battalion.targetTileId
       parts.push(`→${dest}（${formatHoursBrief(marchH)}）`)
     }
-    if (army.inCombat && combatH !== undefined) {
+    if (battalion.inCombat && combatH !== undefined) {
       parts.push(`战（${formatHoursBrief(combatH)}）`)
     }
     panelArmyEl.textContent = parts.join(' · ')
@@ -289,7 +299,8 @@ async function startNewGame(faction: FactionId): Promise<void> {
   alerts.hide()
   recentEvents.length = 0
   eventsPanelEl.textContent = '暂无'
-  corpsDetail.hide()
+  corpsDetail?.hide()
+  battalionDetail?.hide()
 
   const terrainConfig = await loadTerrainConfig()
   const owners = getInitialOwners(map)
@@ -374,23 +385,74 @@ function bindShell(): void {
     renderMap()
   })
 
+  corpsDetail = new CorpsDetail(document.querySelector('#corps-float')!, {
+    onAppoint: (corpsId, heroId) => {
+      if (!save || !map) return
+      const pf = playerFaction()
+      const result = appointGeneral(save, corpsId, heroId, pf)
+      alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
+      if (result.ok) {
+        logger.log('system', result.message)
+        corpsBar?.refresh()
+        corpsDetail?.refresh(save, map, heroes, pf)
+        updatePanel()
+        renderMap()
+      }
+    },
+    onBattalionClick: (_corpsId, battalionId) => {
+      if (!save || !map) return
+      battalionDetail?.show(save, map, battalionId)
+    },
+  })
+
+  battalionDetail = new BattalionDetail(document.querySelector('#battalion-float')!)
+
   corpsBar = new CorpsBar(
     {
       canCreateCorps: () => selectedPlayerTileName() !== null,
-      getSelectedTileName: () => selectedPlayerTileName(),
-      onNewCorps: (tileName) => {
+      getStandbyCorps: () => {
+        if (!save || !map) return []
+        const pf = playerFaction()
+        return getStandbyCorps(save, pf).map((c) => ({
+          id: c.id,
+          label: getCorpsLabel(c, heroes),
+          tileName: map!.tileById[c.tileId]?.name ?? c.tileId,
+        }))
+      },
+      onNewCorps: () => {
+        if (!save || !map || !selectedTileId) return
+        const pf = playerFaction()
+        const tileName = map.tileById[selectedTileId]?.name ?? selectedTileId
+        const { attachedBattalion } = createStandbyCorps(save, pf, selectedTileId)
         logger.log('system', `新编将军队（待命）@${tileName}`)
-        alerts.show(`已登记待命将军队 @${tileName}`, 'info', 3000)
+        const attachMsg = attachedBattalion ? `，收纳 ${attachedBattalion.designation}队` : ''
+        alerts.show(`已登记待命将军队 @${tileName}${attachMsg}`, 'info', 3000)
+        corpsBar?.refresh()
+        updatePanel()
+        renderMap()
       },
-      onStandbyClick: (corps) => {
-        corpsDetail.show(corps)
+      onStandbyClick: (corpsId) => {
+        if (!save || !map) return
+        corpsDetail?.show(save, map, corpsId, heroes, playerFaction())
       },
-      onStandbyLongPress: (corps) => {
-        const name = selectedPlayerTileName()
-        if (name) {
-          alerts.show(`v0.8：将把 @${name} 编入 ${corps.label}`, 'info', 2500)
-        } else {
-          alerts.show('请先在地图上选中己方单位', 'warn', 2500)
+      onStandbyLongPress: (corpsId) => {
+        if (!save || !map) return
+        const pf = playerFaction()
+        const battalion = getSelectedBattalionForCorpsOp(save, selectedTileId, pf)
+        if (!battalion) {
+          alerts.show('请先在地图上选中己方千人队', 'warn', 2500)
+          return
+        }
+        const result = attachBattalionToCorps(save, corpsId, battalion.id, pf)
+        alerts.show(result.message, result.ok ? 'success' : 'warn', 2500)
+        if (result.ok) {
+          logger.log('system', result.message)
+          corpsBar?.refresh()
+          if (corpsDetail?.getCurrentCorpsId() === corpsId) {
+            corpsDetail.refresh(save, map, heroes, pf)
+          }
+          updatePanel()
+          renderMap()
         }
       },
     },
@@ -402,10 +464,12 @@ async function bootstrap(): Promise<void> {
   document.querySelector('#app-version')!.textContent = `v${LOCAL_VERSION.version}`
 
   policies = await loadPoliciesConfig()
+  const heroRes = await fetch(assetUrl('config/heroes.json'))
+  heroes = (await heroRes.json()) as HeroConfig[]
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
-  logger.log('map', `指挥台 v0.7 · 大地图 · 图层 · 小地图 · 将领栏原型`)
+  logger.log('map', `指挥台 v0.8 · 编制体系 · 将领栏`)
 
   const existing = await loadGame()
   if (existing) {
@@ -485,7 +549,7 @@ async function bootstrap(): Promise<void> {
   updateStatus()
   updatePanel()
   renderMap()
-  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 指挥台骨架`)
+  logger.log('system', `就绪 v${LOCAL_VERSION.version} · 编制数据 v0.8`)
 }
 
 function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
@@ -497,20 +561,20 @@ function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
     return false
   }
 
-  const army = findArmyOnTile(save, fromTileId)
-  if (!army || army.faction !== pf) {
+  const battalion = findBattalionOnTile(save, fromTileId)
+  if (!battalion || battalion.faction !== pf) {
     logger.log('system', '该地块无可用己方驻军')
     return false
   }
-  if (army.inCombat || getMarchHoursLeft(army)) {
+  if (battalion.inCombat || getMarchHoursLeft(battalion)) {
     logger.log('system', '军队行军中或战斗中')
     return false
   }
 
-  if (orderMarch(save, army, toTileId, MARCH_HOURS)) {
+  if (orderMarch(save, battalion, toTileId, MARCH_HOURS)) {
     const dest = map.tileById[toTileId]?.name ?? toTileId
-    const hours = getMarchHoursLeft(army)!
-    const msg = `${getFactionLabel(pf)}军 ${fromTile.name} → ${dest}（${formatHoursBrief(hours)}）`
+    const hours = getMarchHoursLeft(battalion)!
+    const msg = `${getFactionLabel(pf)} ${battalion.designation}队 ${fromTile.name} → ${dest}（${formatHoursBrief(hours)}）`
     logger.log('battle', msg)
     pushRecentEvent(msg)
     alerts.show(`军队前往 ${dest}，${formatHoursBrief(hours)}后抵达`, 'info', 4000)
@@ -588,10 +652,9 @@ function bindUi(): void {
   recruitBtn.addEventListener('click', () => {
     if (!save || !selectedTileId) return
     const pf = playerFaction()
-    const armyId = `army_${pf}_${selectedTileId}`
-    if (recruitOnTile(save, selectedTileId, pf, armyId)) {
-      logger.log('system', `募兵 ${selectedTileId} +1000`)
-      alerts.show('募兵成功 +1000', 'success', 3000)
+    if (recruitOnTile(save, selectedTileId, pf)) {
+      logger.log('system', `募兵 ${selectedTileId} +100`)
+      alerts.show('募兵成功 +100（填入缺编百人队）', 'success', 3000)
       updatePanel()
       renderMap()
     }
@@ -625,7 +688,8 @@ function bindUi(): void {
     gameEnded = false
     recentEvents.length = 0
     eventsPanelEl.textContent = '暂无'
-    corpsDetail.hide()
+    corpsDetail?.hide()
+  battalionDetail?.hide()
     time?.setClock(save.date, save.hour ?? 0)
     time?.resume()
     logger.log('system', `读档 ${formatGameTime(save.date, save.hour ?? 0)}`)

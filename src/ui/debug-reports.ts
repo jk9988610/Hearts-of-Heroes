@@ -1,9 +1,10 @@
-import type { Army, FactionId, GameSave, GeneratedMap, MapTile } from '../types/index.ts'
+import type { Battalion, FactionId, GameSave, GeneratedMap, MapTile } from '../types/index.ts'
 import {
-  findArmyOnTile,
+  findBattalionOnTile,
   getCombatHoursLeft,
   getMarchHoursLeft,
 } from '../core/combat.ts'
+import { countBattalionTroops } from '../core/organization/helpers.ts'
 import { listAllArmies } from '../map/army-display.ts'
 import { LOCAL_VERSION } from '../core/version.ts'
 import { getFactionLabel } from '../core/factions.ts'
@@ -18,15 +19,16 @@ export interface GameReportContext {
   formatTileBrief: (tile: MapTile) => string
 }
 
-function formatArmy(army: Army | null): string {
-  if (!army) return '无'
-  const parts = [`${army.troops}兵 @${army.tileId}`]
-  const marchH = getMarchHoursLeft(army)
-  if (marchH !== undefined && army.targetTileId) {
-    parts.push(`行军→${army.targetTileId} 剩${formatHoursBrief(marchH)}`)
+function formatBattalion(battalion: Battalion | null): string {
+  if (!battalion) return '无'
+  const troops = countBattalionTroops(battalion)
+  const parts = [`${battalion.designation}队 ${troops}人 @${battalion.tileId}`]
+  const marchH = getMarchHoursLeft(battalion)
+  if (marchH !== undefined && battalion.targetTileId) {
+    parts.push(`行军→${battalion.targetTileId} 剩${formatHoursBrief(marchH)}`)
   }
-  const combatH = getCombatHoursLeft(army)
-  if (army.inCombat && combatH !== undefined) {
+  const combatH = getCombatHoursLeft(battalion)
+  if (battalion.inCombat && combatH !== undefined) {
     parts.push(`战斗剩${formatHoursBrief(combatH)}`)
   }
   return parts.join(' · ')
@@ -49,7 +51,7 @@ export function buildGameSnapshot(ctx: GameReportContext): string[] {
     const tile = map.tileById[selectedTileId]
     const state = save.tiles[tile.id]
     const neighbors = getNeighborTiles(tile)
-    const army = findArmyOnTile(save, tile.id)
+    const battalion = findBattalionOnTile(save, tile.id)
 
     lines.push(
       '--- 选中地块 ---',
@@ -58,23 +60,23 @@ export function buildGameSnapshot(ctx: GameReportContext): string[] {
       `地形: ${tile.type}`,
       `归属: ${state?.owner ?? 'neutral'}`,
       `屯田: ${state?.hasTuntian ? '是' : '否'}`,
-      `驻军: ${formatArmy(army)}`,
+      `驻军: ${formatBattalion(battalion)}`,
       `邻接(${neighbors.length}): ${neighbors.map(formatTileBrief).join('、') || '无'}`,
     )
   } else {
     lines.push('选中地块: 无')
   }
 
-  lines.push('--- 军队一览 ---')
-  for (const army of listAllArmies(save)) {
-    lines.push(`${army.faction} ${army.id}: ${formatArmy(army)}`)
+  lines.push('--- 千人队一览 ---')
+  for (const battalion of listAllArmies(save)) {
+    lines.push(`${battalion.faction} ${battalion.id}: ${formatBattalion(battalion)}`)
   }
 
   lines.push('--- 势力概况 ---')
   for (const [fid, faction] of Object.entries(save.factions)) {
-    const troops = faction.armies.reduce((s, a) => s + a.troops, 0)
+    const troops = faction.battalions.reduce((s, b) => s + countBattalionTroops(b), 0)
     lines.push(
-      `${fid}: 粮=${faction.food.toFixed(1)} 军=${faction.armies.length}支/${troops}兵 策=[${faction.policies.join(',')}]`,
+      `${fid}: 粮=${faction.food.toFixed(1)} 队=${faction.battalions.length}支/${troops}人 军=${faction.corps.length} 策=[${faction.policies.join(',')}]`,
     )
   }
 
@@ -114,7 +116,7 @@ export function formatTickEvents(input: TickLogInput): {
 export interface TileSelectInfo {
   tile: MapTile
   owner: string
-  army: Army | null
+  army: Battalion | null
   neighbors: MapTile[]
   formatTileBrief: (tile: MapTile) => string
 }
@@ -122,12 +124,14 @@ export interface TileSelectInfo {
 export function formatTileSelect(info: TileSelectInfo): string[] {
   const { tile, owner, army, neighbors, formatTileBrief } = info
   const marchH = army ? getMarchHoursLeft(army) : undefined
+  const troops = army ? countBattalionTroops(army) : 0
   const marchHint =
     marchH !== undefined && army?.targetTileId
       ? ` 行→${army.targetTileId}(${formatHoursBrief(marchH)})`
       : ''
+  const label = army ? `${army.designation}队${troops}人` : ''
   return [
-    `选中 ${tile.name}(${tile.gridX},${tile.gridY}) 归属=${owner}${army ? ` 兵${army.troops}${marchHint}` : ''}`,
+    `选中 ${tile.name}(${tile.gridX},${tile.gridY}) 归属=${owner}${army ? ` ${label}${marchHint}` : ''}`,
     `邻接 ${neighbors.length} 格: ${neighbors.map(formatTileBrief).join('、')}`,
   ]
 }

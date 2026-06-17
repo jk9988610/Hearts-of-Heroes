@@ -1,15 +1,16 @@
-import type { Army, FactionId, GameSave, GeneratedMap } from '../types/index.ts'
+import type { Battalion, FactionId, GameSave, GeneratedMap } from '../types/index.ts'
 import { runAiTurn, type AiAction } from './ai.ts'
 import {
   applyBattleOutcome,
   COMBAT_HOURS,
-  findArmyOnTile,
+  findBattalionOnTile,
   finishMarch,
   getCombatHoursLeft,
   getMarchHoursLeft,
 } from './combat.ts'
+import { countBattalionTroops } from './organization/helpers.ts'
 import { processEconomyHour } from './economy.ts'
-import { isArmyEventVisible, isFactionInView } from './visibility.ts'
+import { isBattalionEventVisible, isFactionInView } from './visibility.ts'
 import type { GameClock } from './time-scale.ts'
 import { AI_LITE_INTERVAL_HOURS } from './time-scale.ts'
 
@@ -60,35 +61,35 @@ function processMarching(
   ctx: TickContext,
   events: TickEvents,
 ): void {
-  const marching: Army[] = []
+  const marching: Battalion[] = []
   for (const faction of Object.values(save.factions)) {
-    for (const army of faction.armies) {
-      const left = getMarchHoursLeft(army)
-      if (left !== undefined && left > 0) marching.push(army)
+    for (const battalion of faction.battalions) {
+      const left = getMarchHoursLeft(battalion)
+      if (left !== undefined && left > 0) marching.push(battalion)
     }
   }
 
-  for (const army of marching) {
-    if (army.inCombat) continue
-    const left = (getMarchHoursLeft(army) ?? 1) - 1
-    army.marchHoursLeft = left
-    army.marchDaysLeft = undefined
+  for (const battalion of marching) {
+    if (battalion.inCombat) continue
+    const left = (getMarchHoursLeft(battalion) ?? 1) - 1
+    battalion.marchHoursLeft = left
+    battalion.marchDaysLeft = undefined
 
-    if (left <= 0 && army.targetTileId) {
-      const target = army.targetTileId
+    if (left <= 0 && battalion.targetTileId) {
+      const target = battalion.targetTileId
       const terrain = map.tileById[target]?.type ?? 'plain'
-      const result = finishMarch(save, army, target, terrain)
+      const result = finishMarch(save, battalion, target, terrain)
       const tileName = map.tileById[target]?.name ?? target
-      const emit = isArmyEventVisible(army, ctx.visibleTileIds, ctx.playerFaction)
+      const emit = isBattalionEventVisible(battalion, ctx.visibleTileIds, ctx.playerFaction)
 
       if (!emit) continue
 
       if (result.type === 'combat') {
-        events.marches.push(`${army.faction} 抵达 ${tileName}，进入战斗`)
+        events.marches.push(`${battalion.faction} 抵达 ${tileName}，进入战斗`)
       } else if (result.type === 'merge') {
-        events.marches.push(`${army.faction} 抵达 ${tileName}，合兵`)
+        events.marches.push(`${battalion.faction} 抵达 ${tileName}，合兵`)
       } else {
-        events.marches.push(`${army.faction} 抵达 ${tileName}`)
+        events.marches.push(`${battalion.faction} 抵达 ${tileName}`)
       }
     }
   }
@@ -100,32 +101,34 @@ function processCombat(
   ctx: TickContext,
   events: TickEvents,
 ): void {
-  const byTile = new Map<string, Army[]>()
+  const byTile = new Map<string, Battalion[]>()
 
   for (const faction of Object.values(save.factions)) {
-    for (const army of faction.armies) {
-      if (!army.inCombat) continue
-      const list = byTile.get(army.tileId) ?? []
-      list.push(army)
-      byTile.set(army.tileId, list)
+    for (const battalion of faction.battalions) {
+      if (!battalion.inCombat) continue
+      const list = byTile.get(battalion.tileId) ?? []
+      list.push(battalion)
+      byTile.set(battalion.tileId, list)
     }
   }
 
-  for (const [tileId, armies] of byTile) {
-    if (armies.length < 2) {
-      for (const army of armies) {
-        army.inCombat = false
-        army.combatHoursLeft = undefined
-        army.combatDaysLeft = undefined
+  for (const [tileId, battalions] of byTile) {
+    if (battalions.length < 2) {
+      for (const battalion of battalions) {
+        battalion.inCombat = false
+        battalion.combatHoursLeft = undefined
+        battalion.combatDaysLeft = undefined
       }
       continue
     }
 
     const attacker =
-      armies.find((a) => a.targetTileId === tileId) ??
-      armies.find((a) => armies.some((d) => d.faction !== a.faction)) ??
-      armies[0]!
-    const defender = armies.find((a) => a.faction !== attacker.faction && a.id !== attacker.id)
+      battalions.find((b) => b.targetTileId === tileId) ??
+      battalions.find((b) => battalions.some((d) => d.faction !== b.faction)) ??
+      battalions[0]!
+    const defender = battalions.find(
+      (b) => b.faction !== attacker.faction && b.id !== attacker.id,
+    )
     if (!defender) continue
 
     const hoursLeft = (getCombatHoursLeft(attacker) ?? COMBAT_HOURS) - 1
@@ -141,16 +144,19 @@ function processCombat(
     const tileName = map.tileById[tileId]?.name ?? tileId
 
     const emit =
-      isArmyEventVisible(attacker, ctx.visibleTileIds, ctx.playerFaction) ||
-      isArmyEventVisible(defender, ctx.visibleTileIds, ctx.playerFaction)
+      isBattalionEventVisible(attacker, ctx.visibleTileIds, ctx.playerFaction) ||
+      isBattalionEventVisible(defender, ctx.visibleTileIds, ctx.playerFaction)
     if (!emit) continue
 
-    if (result.attackerWins || defender.troops <= 0) {
+    const defTroops = countBattalionTroops(defender)
+    const atkTroops = countBattalionTroops(attacker)
+
+    if (result.attackerWins || defTroops <= 0) {
       events.battles.push(
         `${attacker.faction} 攻克 ${tileName}（剩${result.attackerTroops}兵）`,
       )
       events.battleFlashes.push({ tileId, kind: 'capture' })
-    } else if (attacker.troops <= 0) {
+    } else if (atkTroops <= 0) {
       events.battles.push(`${defender.faction} 守住 ${tileName}`)
       events.battleFlashes.push({ tileId, kind: 'defend' })
     } else {
@@ -162,10 +168,13 @@ function processCombat(
   }
 }
 
-export function getArmyOnTile(save: GameSave, tileId: string): Army | null {
-  return findArmyOnTile(save, tileId)
+export function getBattalionOnTile(save: GameSave, tileId: string): Battalion | null {
+  return findBattalionOnTile(save, tileId)
 }
 
 export function playerCanAct(save: GameSave, tileId: string, player: FactionId): boolean {
   return save.tiles[tileId]?.owner === player
 }
+
+/** @deprecated */
+export const getArmyOnTile = getBattalionOnTile

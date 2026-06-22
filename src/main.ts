@@ -27,6 +27,7 @@ import {
   getMarchHoursLeft,
 } from './core/combat.ts'
 import { orderMarchToTile } from './core/march-path.ts'
+import { getAlliedFactions } from './core/diplomacy.ts'
 import { countBattalionTroops, getCorpsLabel } from './core/organization/helpers.ts'
 import {
   attachBattalionToCorps,
@@ -55,13 +56,6 @@ import {
 import { setHeroRegistry } from './core/organization/hero-assign.ts'
 import { findBattalionById, findCorpsById, getStandbyCorps } from './core/organization/queries.ts'
 import {
-  buildTuntian,
-  canBuildTuntian,
-  canRecruit,
-  recruitOnTile,
-  TUNTIAN_COST,
-} from './core/economy.ts'
-import {
   loadPoliciesConfig,
 } from './core/policies.ts'
 import { checkVictory, getPlayerStatusHints } from './core/victory.ts'
@@ -85,7 +79,10 @@ import { ArmyGroupDetail } from './ui/shell/army-group-detail.ts'
 import { BattalionDetail } from './ui/shell/battalion-detail.ts'
 import { CounterStackFloat } from './ui/shell/counter-stack-float.ts'
 import { renderPolicyTree } from './ui/shell/policy-tree.ts'
-import type { Battalion, FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
+import { DiplomacyModal } from './ui/diplomacy-modal.ts'
+import { NationPanel } from './ui/nation-panel.ts'
+import { bindActionBar } from './ui/action-bar.ts'
+import type { Battalion, AdvisorConfig, FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
@@ -93,6 +90,7 @@ const panelTileEl = document.querySelector<HTMLDivElement>('#panel-tile')!
 const panelArmyEl = document.querySelector<HTMLDivElement>('#panel-army')!
 const eventsPanelEl = document.querySelector<HTMLDivElement>('#events-panel')!
 const policyTreeEl = document.querySelector<HTMLDivElement>('#policy-tree')!
+const playerFactionBtn = document.querySelector<HTMLButtonElement>('#btn-player-faction')!
 const canvas = document.querySelector<HTMLCanvasElement>('#map')!
 const labelLayer = document.querySelector<HTMLDivElement>('#label-layer')!
 const counterLayer = document.querySelector<HTMLDivElement>('#counter-layer')!
@@ -115,6 +113,7 @@ let save: GameSave | null = null
 let time: TimeController | null = null
 let policies: PolicyConfig[] = []
 let heroes: HeroConfig[] = []
+let advisors: AdvisorConfig[] = []
 let selectedTileId: string | undefined
 let selectedBattalionId: string | undefined
 let pendingFaction: FactionId = 'wei'
@@ -127,7 +126,11 @@ let selectedCorpsId: string | null = null
 let selectedArmyGroupId: string | null = null
 let redrawMinimap: (() => void) | null = null
 let modalHost: ModalHost | null = null
+let diplomacyModal: DiplomacyModal | null = null
+let nationPanel: NationPanel | null = null
 let lastCounterItems: ReturnType<typeof buildCounterDisplay> = []
+
+const PLAYABLE_FACTIONS: FactionId[] = ['wei', 'shu', 'wu']
 
 function playerFaction(): FactionId {
   return save?.playerFaction ?? pendingFaction
@@ -194,6 +197,7 @@ function updateStatus(): void {
       ).length
     : 0
   statusEl.textContent = `${formatGameTime(clock.day, clock.hour)} · ${getFactionLabel(pf)} · ${paused} · ×${time.getSpeed()} · 粮${food.toFixed(0)} · 城${keys}/6`
+  playerFactionBtn.textContent = getFactionLabel(pf)
 }
 
 function getNeighborTiles(tile: MapTile): MapTile[] {
@@ -283,6 +287,7 @@ function renderMap(): void {
       selectedBattalionId: selectedBattalionId ?? undefined,
       selectedCorpsId: selectedCorpsId ?? undefined,
       selectedCorpsIds: group ? getCorpsIdsInGroup(save, group) : undefined,
+      alliedFactions: getAlliedFactions(save, playerFaction()),
     })
     lastCounterItems = counters
     renderCounterLayer(counterLayer, canvas, map, counters, scale)
@@ -324,8 +329,6 @@ function renderPolicies(): void {
 }
 
 function updatePanel(): void {
-  const recruitBtn = document.querySelector<HTMLButtonElement>('#btn-recruit')!
-  const tuntianBtn = document.querySelector<HTMLButtonElement>('#btn-tuntian')!
   const pf = playerFaction()
 
   corpsBar?.refresh()
@@ -334,8 +337,6 @@ function updatePanel(): void {
   if (!save || !map) {
     panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块或军棋`
     panelArmyEl.textContent = '—'
-    recruitBtn.disabled = true
-    tuntianBtn.disabled = true
     return
   }
 
@@ -364,16 +365,12 @@ function updatePanel(): void {
       parts.push(`战（${formatHoursBrief(combatH)}）`)
     }
     panelArmyEl.textContent = parts.join(' · ')
-    recruitBtn.disabled = true
-    tuntianBtn.disabled = true
     return
   }
 
   if (!selectedTileId) {
     panelTileEl.textContent = `操控：${getFactionLabel(pf)} · 点击地图选择地块或军棋`
     panelArmyEl.textContent = '—'
-    recruitBtn.disabled = true
-    tuntianBtn.disabled = true
     return
   }
 
@@ -383,7 +380,6 @@ function updatePanel(): void {
 
   const battalion = getArmyForUi(save, selectedTileId)
   const isPlayer = playerCanAct(save, selectedTileId, pf)
-  const food = save.factions[pf]?.food ?? 0
 
   panelTileEl.textContent = `${tile.name} · ${getFactionLabel(state.owner as FactionId)}${isPlayer ? ' · 己方' : ''}`
 
@@ -403,11 +399,6 @@ function updatePanel(): void {
   } else {
     panelArmyEl.textContent = isPlayer ? '无驻军' : '—'
   }
-
-  const onMilitary = mapLayer === 'military'
-  recruitBtn.disabled = gameEnded || !isPlayer || !canRecruit(save, pf) || !onMilitary
-  tuntianBtn.disabled =
-    gameEnded || !isPlayer || !canBuildTuntian(save, selectedTileId) || food < TUNTIAN_COST || !onMilitary
 }
 
 function updateAlertsFromTick(battles: string[]): void {
@@ -466,6 +457,12 @@ async function startNewGame(faction: FactionId): Promise<void> {
     if (heroIdsByFaction[h.faction]) heroIdsByFaction[h.faction].push(h.id)
   }
   save = createNewGame(owners, heroIdsByFaction, faction)
+  for (const advisor of advisors) {
+    const f = save.factions[advisor.faction]
+    if (f?.advisors && !f.advisors.includes(advisor.id)) {
+      f.advisors.push(advisor.id)
+    }
+  }
   await saveGame(save)
   time?.setClock(0, 0)
   time?.resume()
@@ -512,14 +509,55 @@ function bindShell(): void {
     { id: 'debug', title: '调试', element: document.querySelector('#modal-debug')! },
     { id: 'policies', title: '国策', element: document.querySelector('#modal-policies')! },
     { id: 'events', title: '近期事件', element: document.querySelector('#modal-events')! },
+    { id: 'action-research', title: '科研', element: document.querySelector('#modal-action-research')! },
+    { id: 'action-trade', title: '贸易', element: document.querySelector('#modal-action-trade')! },
+    { id: 'action-construction', title: '建设', element: document.querySelector('#modal-action-construction')! },
+    { id: 'action-production', title: '生产', element: document.querySelector('#modal-action-production')! },
+    { id: 'action-recruitment', title: '募兵', element: document.querySelector('#modal-action-recruitment')! },
   ])
+
+  diplomacyModal = new DiplomacyModal({
+    root: document.querySelector('#diplomacy-modal')!,
+    getSave: () => save,
+    getPlayerFaction: playerFaction,
+    onChanged: () => renderMap(),
+  })
+
+  nationPanel = new NationPanel({
+    root: document.querySelector('#nation-panel')!,
+    policyTreeEl,
+    renderPolicies,
+    getSave: () => save,
+    getPlayerFaction: playerFaction,
+    getHeroes: () => heroes,
+    getAdvisors: () => advisors,
+    onChanged: () => {
+      updateStatus()
+      renderMap()
+    },
+  })
+
+  playerFactionBtn.addEventListener('click', () => {
+    nationPanel?.toggle()
+  })
+
+  bindActionBar({
+    getSave: () => save,
+    getPlayerFaction: playerFaction,
+    getSelectedTileId: () => resolveSelectedPlayerTileId(),
+    getMapLayer: () => mapLayer,
+    isGameEnded: () => gameEnded,
+    onChanged: () => {
+      updateStatus()
+      updatePanel()
+      renderMap()
+    },
+    showAlert: (msg, type, ms) => alerts.show(msg, type, ms),
+    modalHost: modalHost!,
+  })
 
   document.querySelector('#btn-modal-debug')!.addEventListener('click', () => {
     modalHost?.toggle('debug', '调试')
-  })
-  document.querySelector('#btn-modal-policies')!.addEventListener('click', () => {
-    renderPolicies()
-    modalHost?.toggle('policies', '国策')
   })
   document.querySelector('#btn-modal-events')!.addEventListener('click', () => {
     modalHost?.toggle('events', '近期事件')
@@ -833,6 +871,8 @@ async function bootstrap(): Promise<void> {
   const heroRes = await fetch(assetUrl('config/heroes.json'))
   heroes = (await heroRes.json()) as HeroConfig[]
   setHeroRegistry(heroes)
+  const advisorRes = await fetch(assetUrl('config/advisors.json'))
+  advisors = (await advisorRes.json()) as AdvisorConfig[]
   const terrainConfig = await loadTerrainConfig()
   map = generateMap(terrainConfig)
 
@@ -842,6 +882,12 @@ async function bootstrap(): Promise<void> {
   if (existing) {
     save = migrateSave(existing)
     pendingFaction = save.playerFaction
+    for (const advisor of advisors) {
+      const f = save.factions[advisor.faction]
+      if (f?.advisors && !f.advisors.includes(advisor.id)) {
+        f.advisors.push(advisor.id)
+      }
+    }
     logger.log(
       'system',
       `读档 ${formatGameTime(save.date, save.hour ?? 0)} · 操控${getFactionLabel(save.playerFaction)}`,
@@ -922,6 +968,7 @@ async function bootstrap(): Promise<void> {
   updateStatus()
   updatePanel()
   renderMap()
+  mapViewportCtrl?.centerHorizontally()
   logger.log('system', `就绪 v${LOCAL_VERSION.version} · v0.9`)
 }
 
@@ -954,15 +1001,27 @@ function tryMoveArmy(battalion: Battalion, toTileId: string): boolean {
 }
 
 function onMapCommand(clientX: number, clientY: number): void {
-  if (!map || !save || mapLayer !== 'military') return
-  const battalion = resolveSelectedPlayerBattalion()
-  if (!battalion) {
-    alerts.show('请先在地图上选中己方军棋', 'warn', 2500)
+  if (!map || !save) return
+
+  const tile = hitTestTile(canvas, map, clientX, clientY)
+  if (!tile) return
+
+  const pf = playerFaction()
+  const owner = (save.tiles[tile.id]?.owner ?? 'neutral') as FactionId
+
+  if (owner !== pf && owner !== 'neutral' && PLAYABLE_FACTIONS.includes(owner)) {
+    diplomacyModal?.show(owner)
     return
   }
 
-  const tile = hitTestTile(canvas, map, clientX, clientY)
-  if (!tile || tile.id === battalion.tileId) return
+  if (mapLayer !== 'military') return
+
+  const battalion = resolveSelectedPlayerBattalion()
+  if (!battalion) {
+    alerts.show('请先在地图上选中己方军棋以移动', 'warn', 2500)
+    return
+  }
+  if (tile.id === battalion.tileId) return
 
   tryMoveArmy(battalion, tile.id)
 }
@@ -1019,8 +1078,6 @@ function bindUi(): void {
   const saveBtn = document.querySelector<HTMLButtonElement>('#btn-save')!
   const loadBtn = document.querySelector<HTMLButtonElement>('#btn-load')!
   const newBtn = document.querySelector<HTMLButtonElement>('#btn-new')!
-  const recruitBtn = document.querySelector<HTMLButtonElement>('#btn-recruit')!
-  const tuntianBtn = document.querySelector<HTMLButtonElement>('#btn-tuntian')!
 
   mapViewportCtrl = bindMapViewport({
     viewport: mapViewport,
@@ -1030,7 +1087,10 @@ function bindUi(): void {
     onTap: onMapTap,
     onLongPress: onMapCommand,
     onContextMenu: onMapCommand,
-    onScaleChange: () => renderMap(),
+    onScaleChange: () => {
+      renderMap()
+      mapViewportCtrl?.centerHorizontally()
+    },
   })
 
   redrawMinimap = bindMinimap({
@@ -1055,28 +1115,6 @@ function bindUi(): void {
     })
   })
   document.querySelector<HTMLButtonElement>('[data-speed="1"]')?.classList.add('active')
-
-  recruitBtn.addEventListener('click', () => {
-    if (!save || !selectedTileId) return
-    const pf = playerFaction()
-    if (recruitOnTile(save, selectedTileId, pf)) {
-      logger.log('system', `募兵 ${selectedTileId} +100`)
-      alerts.show('募兵成功 +100（填入缺编百人队）', 'success', 3000)
-      updatePanel()
-      renderMap()
-    }
-  })
-
-  tuntianBtn.addEventListener('click', () => {
-    if (!save || !selectedTileId) return
-    const pf = playerFaction()
-    if (buildTuntian(save, selectedTileId, pf)) {
-      logger.log('system', `屯田 ${selectedTileId}`)
-      alerts.show('屯田建成，产出×2', 'success', 3000)
-      updatePanel()
-      renderMap()
-    }
-  })
 
   saveBtn.addEventListener('click', async () => {
     if (!save) return

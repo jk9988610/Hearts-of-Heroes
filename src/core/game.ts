@@ -92,7 +92,9 @@ function processMarching(
 
       if (!emit) continue
 
-      if (result.type === 'combat') {
+      if (result.type === 'blocked') {
+        events.marches.push(`${battalion.faction} 在 ${tileName} 停步（和平时不可进入）`)
+      } else if (result.type === 'combat') {
         events.marches.push(`${battalion.faction} 抵达 ${tileName}，进入战斗`)
       } else if (result.type === 'merge') {
         events.marches.push(`${battalion.faction} 抵达 ${tileName}，合兵`)

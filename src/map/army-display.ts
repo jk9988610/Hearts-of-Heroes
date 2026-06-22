@@ -80,19 +80,12 @@ export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
         label: formatHoursBrief(marchH),
       })
 
-      overlays[target] = {
+      overlays[from] = {
         troops,
         faction: battalion.faction,
-        kind: 'marching-in',
+        kind: 'garrison',
         status: `→${formatHoursBrief(marchH)}`,
         designation: battalion.designation,
-      }
-
-      overlays[from] = {
-        troops: 0,
-        faction: battalion.faction,
-        kind: 'marching-out',
-        status: '出发',
       }
     } else if (battalion.inCombat && combatH !== undefined) {
       overlays[battalion.tileId] = {

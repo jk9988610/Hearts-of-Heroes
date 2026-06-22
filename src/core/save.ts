@@ -15,8 +15,15 @@ import {
 import { ensureOrganizationTiles, migrateArmiesToOrganization } from './organization/migrate.ts'
 import { ensureBattalionDefaults } from './organization/corps-commands.ts'
 import { autoAssignAiGenerals, ensureArmyGroups } from './organization/hero-assign.ts'
+import { ensureDiplomacy } from './diplomacy.ts'
 
 let dbPromise: Promise<IDBPDatabase> | null = null
+
+const SLOT_COUNT = 7
+
+function emptySlots(): (string | undefined)[] {
+  return Array.from({ length: SLOT_COUNT }, () => undefined)
+}
 
 const STARTER_CAPITALS: { faction: FactionId; tileId: string }[] = [
   { faction: 'wei', tileId: 'xuchang' },
@@ -107,9 +114,9 @@ export function createNewGame(
   }
 
   const factions: GameSave['factions'] = {
-    wei: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.wei ?? [] },
-    shu: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.shu ?? [] },
-    wu: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.wu ?? [] },
+    wei: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.wei ?? [], advisors: [], strategistSlots: emptySlots(), officerSlots: emptySlots() },
+    shu: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.shu ?? [], advisors: [], strategistSlots: emptySlots(), officerSlots: emptySlots() },
+    wu: { food: 100, corps: [], battalions: [], armyGroups: [], policies: [], heroes: heroIdsByFaction.wu ?? [], advisors: [], strategistSlots: emptySlots(), officerSlots: emptySlots() },
   }
 
   const save: GameSave = {
@@ -122,6 +129,7 @@ export function createNewGame(
   }
 
   addStarterOrganization(save)
+  ensureDiplomacy(save)
   return save
 }
 
@@ -135,7 +143,12 @@ export function migrateSave(save: GameSave): GameSave {
     faction.corps = faction.corps ?? []
     faction.battalions = faction.battalions ?? []
     faction.armyGroups = faction.armyGroups ?? []
+    faction.advisors = faction.advisors ?? []
+    faction.strategistSlots = faction.strategistSlots ?? emptySlots()
+    faction.officerSlots = faction.officerSlots ?? emptySlots()
   }
+
+  ensureDiplomacy(save)
 
   migrateArmiesToOrganization(save)
   ensureOrganizationTiles(save)

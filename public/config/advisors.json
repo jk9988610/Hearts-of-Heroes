@@ -1,0 +1,14 @@
+[
+  { "id": "guojia", "name": "郭嘉", "faction": "wei" },
+  { "id": "xunyu", "name": "荀彧", "faction": "wei" },
+  { "id": "jiaxu", "name": "贾诩", "faction": "wei" },
+  { "id": "simayi", "name": "司马懿", "faction": "wei" },
+  { "id": "zhugeliang", "name": "诸葛亮", "faction": "shu" },
+  { "id": "pangtong", "name": "庞统", "faction": "shu" },
+  { "id": "fazheng", "name": "法正", "faction": "shu" },
+  { "id": "jiangwan", "name": "蒋琬", "faction": "shu" },
+  { "id": "zhouyu", "name": "周瑜", "faction": "wu" },
+  { "id": "luxun", "name": "陆逊", "faction": "wu" },
+  { "id": "lusu", "name": "鲁肃", "faction": "wu" },
+  { "id": "zhugejin", "name": "诸葛瑾", "faction": "wu" }
+]

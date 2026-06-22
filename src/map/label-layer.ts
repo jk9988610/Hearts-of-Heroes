@@ -4,30 +4,43 @@ import { getMapLayout } from './generator.ts'
 /** 屏幕空间固定字号（px），不随地图缩放变化 */
 export const LABEL_FONT_PX = 14
 
-/** 关键城池显示权重：缩小时优先保留高权重地名 */
-const CITY_WEIGHTS: Record<string, number> = {
-  changan: 100,
-  yecheng: 100,
-  chengdu: 100,
-  jianye: 100,
-  xuchang: 85,
-  xiangyang: 85,
-  xuzhou: 80,
-  hanzhong: 75,
-  puyang: 65,
-  chenliu: 60,
-  xiaopei: 55,
-  jiangling: 55,
+export type CityTier = 'mega' | 'large' | 'small'
+
+/** 关键城三级优先级：超大城市 > 大城市 > 小城市 */
+const CITY_TIERS: Record<string, CityTier> = {
+  changan: 'mega',
+  yecheng: 'mega',
+  chengdu: 'mega',
+  jianye: 'mega',
+  xuchang: 'large',
+  xiangyang: 'large',
+  xuzhou: 'large',
+  hanzhong: 'large',
+  puyang: 'small',
+  chenliu: 'small',
+  xiaopei: 'small',
+  jiangling: 'small',
 }
 
-export function getCityLabelWeight(tileId: string, isKeyCity: boolean): number {
-  if (!isKeyCity) return 0
-  return CITY_WEIGHTS[tileId] ?? 50
+const TIER_ORDER: CityTier[] = ['mega', 'large', 'small']
+
+export function getCityTier(tileId: string, isKeyCity: boolean): CityTier | null {
+  if (!isKeyCity) return null
+  return CITY_TIERS[tileId] ?? 'small'
 }
 
-/** 视口缩放越小，阈值越高，显示的地名越少 */
-export function minWeightForScale(viewportScale: number): number {
-  return Math.max(0, Math.ceil(110 / viewportScale - 45))
+/** 缩放越小，只显示更高优先级；同一优先级全部同时显示 */
+export function visibleTiersForScale(viewportScale: number): Set<CityTier> {
+  const visible = new Set<CityTier>()
+  if (viewportScale >= 1.15) {
+    for (const tier of TIER_ORDER) visible.add(tier)
+  } else if (viewportScale >= 0.9) {
+    visible.add('mega')
+    visible.add('large')
+  } else {
+    visible.add('mega')
+  }
+  return visible
 }
 
 export function renderLabelLayer(
@@ -38,21 +51,20 @@ export function renderLabelLayer(
 ): void {
   const layout = getMapLayout(canvas, map)
   const { cell, offsetX, offsetY } = layout
-  const threshold = minWeightForScale(viewportScale)
+  const visibleTiers = visibleTiersForScale(viewportScale)
 
   container.replaceChildren()
 
   for (const tile of map.tiles) {
-    const weight = getCityLabelWeight(tile.id, tile.isKeyCity)
-    if (weight < threshold) continue
+    const tier = getCityTier(tile.id, tile.isKeyCity)
+    if (!tier || !visibleTiers.has(tier)) continue
 
     const cx = offsetX + tile.gridX * cell + cell / 2
     const cy = offsetY + tile.gridY * cell + cell / 2
 
     const el = document.createElement('span')
-    el.className = 'map-city-label'
+    el.className = `map-city-label map-city-label--${tier}`
     el.textContent = tile.name
-    // 容器随视口等比放大，坐标需从画布空间换算到布局空间
     el.style.left = `${cx * viewportScale}px`
     el.style.top = `${cy * viewportScale}px`
     el.style.fontSize = `${LABEL_FONT_PX}px`

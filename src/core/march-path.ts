@@ -1,4 +1,5 @@
 import type { Battalion, GameSave, GeneratedMap } from '../types/index.ts'
+import { canMarchToTile } from './diplomacy.ts'
 import { findTilePath } from '../map/pathfinding.ts'
 import { getMarchHoursLeft, orderMarch, MARCH_HOURS } from './combat.ts'
 
@@ -41,6 +42,12 @@ export function orderMarchToTile(
   const path = findTilePath(map, battalion.tileId, targetTileId)
   if (!path || path.length < 2) {
     return { ok: false, message: '无法到达该格' }
+  }
+
+  for (let i = 1; i < path.length; i++) {
+    if (!canMarchToTile(save, battalion.faction, path[i]!)) {
+      return { ok: false, message: '和平时不可进入敌国领土，请先宣战' }
+    }
   }
 
   battalion.marchRoute = path

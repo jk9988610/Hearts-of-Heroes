@@ -201,7 +201,7 @@ export function buildCounterDisplay(
   for (const battalion of listAllBattalions(save)) {
     const marchH = getMarchHoursLeft(battalion)
     const isMarching = marchH !== undefined && marchH > 0 && battalion.targetTileId
-    const displayTileId = isMarching ? battalion.targetTileId! : battalion.tileId
+    const displayTileId = battalion.tileId
     const troops = countBattalionTroops(battalion)
     if (troops <= 0 && !isMarching) continue
 

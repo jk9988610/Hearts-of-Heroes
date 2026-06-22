@@ -1,4 +1,5 @@
 import type { Battalion, GameSave, TerrainType } from '../types/index.ts'
+import { isAtWar } from './diplomacy.ts'
 import {
   countBattalionTroops,
   distributeCenturyLosses,
@@ -153,13 +154,18 @@ export function finishMarch(
   battalion: Battalion,
   targetTileId: string,
   _terrain: TerrainType,
-): { type: 'moved' | 'combat' | 'merge'; defender?: Battalion } {
+): { type: 'moved' | 'combat' | 'merge' | 'blocked'; defender?: Battalion } {
   const defender = findBattalionOnTile(save, targetTileId)
   battalion.targetTileId = undefined
   battalion.marchHoursLeft = undefined
   battalion.marchDaysLeft = undefined
 
   if (defender && defender.faction !== battalion.faction) {
+    if (!isAtWar(save, battalion.faction, defender.faction)) {
+      battalion.marchPath = undefined
+      battalion.marchRoute = undefined
+      return { type: 'blocked' }
+    }
     battalion.marchPath = undefined
     battalion.marchRoute = undefined
     syncBattalionTile(save, battalion, targetTileId)

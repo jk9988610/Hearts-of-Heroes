@@ -12,6 +12,9 @@
         background: #2a2418;
         color: #2c2416;
         overflow: hidden;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
       }
       button {
         padding: 0.35rem 0.65rem;
@@ -79,6 +82,8 @@
         background: #e8e0d0;
         -webkit-overflow-scrolling: touch;
         cursor: grab;
+        display: flex;
+        justify-content: center;
       }
       #map-viewport:active { cursor: grabbing; }
       #map-stack {
@@ -104,7 +109,6 @@
         transform: translate(-50%, -50%);
         color: #1a1208;
         font-family: "Noto Serif SC", serif;
-        font-weight: 600;
         white-space: nowrap;
         text-shadow:
           1px 1px 0 #f4efe4,
@@ -113,6 +117,62 @@
           -1px 1px 0 #f4efe4;
         pointer-events: none;
       }
+      .map-city-label--mega { font-size: 15px; font-weight: 700; }
+      .map-city-label--large { font-size: 14px; font-weight: 600; }
+      .map-city-label--small { font-size: 13px; font-weight: 500; }
+
+      #action-bar {
+        flex: 0 0 auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        padding: 0.3rem 0.5rem;
+        background: #ddd4c4;
+        border-bottom: 1px solid #8b7355;
+        z-index: 18;
+      }
+      #action-bar button { min-width: 3.5rem; }
+      #btn-player-faction {
+        font-weight: bold;
+        min-width: 2.5rem;
+        background: #c9b896;
+      }
+
+      .slot-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.35rem;
+        margin: 0.5rem 0;
+      }
+      .slot-btn {
+        min-height: 2rem;
+        font-size: 0.75rem;
+        padding: 0.25rem;
+      }
+      .nation-section { margin-bottom: 0.75rem; }
+      .nation-section h4 { margin: 0.35rem 0; font-size: 0.9rem; }
+
+      .diplomacy-dialog, .nation-dialog {
+        background: #ebe3d4;
+        border: 2px solid #8b7355;
+        padding: 1rem;
+        min-width: 260px;
+        max-width: 90vw;
+      }
+      .diplomacy-actions, .nation-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+      .diplomacy-backdrop, .nation-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      }
+      #diplomacy-modal[hidden], #nation-panel[hidden] { display: none; }
+
+      .action-panel-hint { font-size: 0.85rem; color: #5c4f3a; margin: 0.5rem 0; }
+      .action-placeholder { font-size: 0.85rem; color: #5c4f3a; padding: 0.5rem 0; }
       #counter-layer {
         position: absolute;
         left: 0;
@@ -601,6 +661,8 @@
         overflow-y: auto;
         border-radius: 4px;
         white-space: pre-wrap;
+        -webkit-user-select: text;
+        user-select: text;
       }
       .modal-toolbar {
         display: flex;
@@ -672,6 +734,7 @@
   <body>
     <div id="app">
       <header id="top-bar">
+        <button id="btn-player-faction" type="button">魏</button>
         <span class="brand">三国雄心 <span id="app-version">v0.7</span></span>
         <span id="status">加载中…</span>
         <div class="top-group">
@@ -685,10 +748,17 @@
           <button id="btn-new" type="button">新游戏</button>
           <span class="top-sep"></span>
           <button id="btn-modal-debug" type="button">调试</button>
-          <button id="btn-modal-policies" type="button">国策</button>
           <button id="btn-modal-events" type="button">日志</button>
         </div>
       </header>
+
+      <nav id="action-bar">
+        <button id="btn-action-research" type="button">科研</button>
+        <button id="btn-action-trade" type="button">贸易</button>
+        <button id="btn-action-construction" type="button">建设</button>
+        <button id="btn-action-production" type="button">生产</button>
+        <button id="btn-action-recruitment" type="button">募兵</button>
+      </nav>
 
       <div id="alert-banner" hidden></div>
 
@@ -728,9 +798,9 @@
         <aside id="tile-float">
           <h4 id="panel-tile">点击地图选择地块</h4>
           <div id="panel-army">—</div>
-          <div id="tile-float-actions">
-            <button id="btn-recruit" type="button" disabled>募兵</button>
-            <button id="btn-tuntian" type="button" disabled>屯田</button>
+          <div id="tile-float-actions" hidden>
+            <button id="btn-recruit" type="button" disabled hidden>募兵</button>
+            <button id="btn-tuntian" type="button" disabled hidden>屯田</button>
           </div>
         </aside>
       </main>
@@ -748,7 +818,7 @@
               <button type="button" data-cmd="defend">驻守筑壕</button>
               <button type="button" data-cmd="cancel-march">取消行军</button>
             </div>
-            <div class="corps-hint">短按选中 · 右键/长按移动 · 单击待命详情 · 长按待命编入</div>
+            <div class="corps-hint">短按选中 · 右键/长按移动或外交 · 顶栏国名打开国策/谋士/军官</div>
             <div id="corps-grid"></div>
           </section>
           <section id="layer-panel">
@@ -784,7 +854,24 @@
               <div id="log"></div>
             </div>
             <div id="modal-policies" class="modal-panel" data-modal-title="国策" hidden>
-              <div id="policy-tree"></div>
+              <div id="policy-tree-host"></div>
+            </div>
+            <div id="modal-action-research" class="modal-panel" data-modal-title="科研" hidden>
+              <p class="action-placeholder">科研系统筹备中。未来将解锁兵种升级与战术研究。</p>
+            </div>
+            <div id="modal-action-trade" class="modal-panel" data-modal-title="贸易" hidden>
+              <p class="action-placeholder">贸易系统筹备中。未来将可与他国交换资源。</p>
+            </div>
+            <div id="modal-action-construction" class="modal-panel" data-modal-title="建设" hidden>
+              <p id="action-construction-hint" class="action-panel-hint">请先在地图上选中己方地块</p>
+              <button id="action-construction-run" type="button" disabled>建造屯田</button>
+            </div>
+            <div id="modal-action-production" class="modal-panel" data-modal-title="生产" hidden>
+              <p class="action-placeholder">生产系统筹备中。未来将管理装备与军需制造。</p>
+            </div>
+            <div id="modal-action-recruitment" class="modal-panel" data-modal-title="募兵" hidden>
+              <p id="action-recruitment-hint" class="action-panel-hint">请先在地图上选中己方地块</p>
+              <button id="action-recruitment-run" type="button" disabled>执行募兵</button>
             </div>
             <div id="modal-events" class="modal-panel" data-modal-title="近期事件" hidden>
               <div id="events-panel">暂无</div>
@@ -793,6 +880,46 @@
         </div>
       </div>
     </div>
+
+    <div id="diplomacy-modal" hidden>
+      <div class="diplomacy-backdrop">
+        <div class="diplomacy-dialog" role="dialog" aria-modal="true">
+          <h3 class="diplomacy-title">外交</h3>
+          <p class="diplomacy-status">—</p>
+          <div class="diplomacy-actions">
+            <button id="diplomacy-declare" type="button">宣战</button>
+            <button id="diplomacy-cease" type="button">停战</button>
+            <button type="button" class="diplomacy-close">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="nation-panel" hidden>
+      <div class="nation-backdrop">
+        <div class="nation-dialog" role="dialog" aria-modal="true">
+          <h3 class="nation-title">国家</h3>
+          <div class="nation-section">
+            <button id="nation-open-policies" type="button">国策</button>
+            <div id="nation-policy-tree" hidden></div>
+          </div>
+          <div class="nation-section">
+            <h4>谋士团（7 槽）</h4>
+            <div id="strategist-slots" class="slot-grid"></div>
+          </div>
+          <div class="nation-section">
+            <h4>军官团（7 槽）</h4>
+            <p style="font-size:0.75rem;color:#5c4f3a;margin:0 0 0.35rem">将领可同时领兵</p>
+            <div id="officer-slots" class="slot-grid"></div>
+          </div>
+          <div class="nation-actions">
+            <button type="button" class="nation-close">关闭</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="policy-tree" hidden></div>
 
     <div id="army-group-modal" hidden>
       <div class="ag-dialog">

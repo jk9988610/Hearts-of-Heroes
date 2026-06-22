@@ -23,6 +23,12 @@ export interface HeroConfig {
   defense: number
 }
 
+export interface AdvisorConfig {
+  id: string
+  name: string
+  faction: FactionId
+}
+
 export interface PolicyEffect {
   type: string
   value: number
@@ -126,6 +132,12 @@ export interface FactionState {
   armies?: Army[]
   policies: string[]
   heroes: string[]
+  /** 谋士池（可任命至谋士团） */
+  advisors?: string[]
+  /** 谋士团 7 槽 */
+  strategistSlots?: (string | undefined)[]
+  /** 军官团 7 槽（将领，不影响领兵） */
+  officerSlots?: (string | undefined)[]
   starvingDays?: number
 }
 
@@ -136,6 +148,8 @@ export interface GameSave {
   playerFaction: FactionId
   factions: Record<string, FactionState>
   tiles: Record<string, TileState>
+  /** 势力间外交，键为 "a:b" 排序对 */
+  diplomacy?: Record<string, 'peace' | 'war'>
 }
 
 export interface MapTile {

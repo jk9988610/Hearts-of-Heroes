@@ -20,6 +20,7 @@ export interface MapViewportOptions {
 
 export interface MapViewportController {
   getScale(): number
+  centerHorizontally(): void
 }
 
 /** 地图视口：拖拽滚动、滚轮/双指缩放、短按/长按/右键 */
@@ -172,7 +173,21 @@ export function bindMapViewport(options: MapViewportOptions): MapViewportControl
   interactionRoot.addEventListener('pointerup', endPointer)
   interactionRoot.addEventListener('pointercancel', endPointer)
 
+  function centerHorizontally(): void {
+    const contentW = canvas.width * scale
+    const viewW = viewport.clientWidth
+    if (contentW <= viewW) {
+      viewport.scrollLeft = 0
+    } else {
+      viewport.scrollLeft = Math.max(0, (contentW - viewW) / 2)
+    }
+  }
+
+  centerHorizontally()
+  window.addEventListener('resize', centerHorizontally)
+
   return {
     getScale: () => scale,
+    centerHorizontally,
   }
 }

@@ -1,5 +1,6 @@
 import type { FactionId, GameSave, GeneratedMap } from '../types/index.ts'
 import { computeGridNeighbors } from '../map/generator.ts'
+import { isAtWar } from './diplomacy.ts'
 import { FACTION_CAPITAL, PLAYABLE_FACTIONS } from './factions.ts'
 import {
   findBattalionOnTile,
@@ -44,6 +45,7 @@ function corpsAttackTarget(
     for (const neighbor of computeGridNeighbors(map, mapTile)) {
       const nState = save.tiles[neighbor.id]
       if (!nState || nState.owner === corps.faction || nState.owner === 'neutral') continue
+      if (!isAtWar(save, corps.faction, nState.owner)) continue
 
       const enemy = findBattalionOnTile(save, neighbor.id)
       const enemyTroops = enemy ? countBattalionTroops(enemy) : 0

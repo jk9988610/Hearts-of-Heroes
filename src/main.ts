@@ -23,12 +23,10 @@ import {
 } from './core/save.ts'
 import { gameHourTick, playerCanAct } from './core/game.ts'
 import {
-  findBattalionOnTile,
   getCombatHoursLeft,
   getMarchHoursLeft,
-  MARCH_HOURS,
-  orderMarch,
 } from './core/combat.ts'
+import { orderMarchToTile } from './core/march-path.ts'
 import { countBattalionTroops, getCorpsLabel } from './core/organization/helpers.ts'
 import {
   attachBattalionToCorps,
@@ -87,7 +85,7 @@ import { ArmyGroupDetail } from './ui/shell/army-group-detail.ts'
 import { BattalionDetail } from './ui/shell/battalion-detail.ts'
 import { CounterStackFloat } from './ui/shell/counter-stack-float.ts'
 import { renderPolicyTree } from './ui/shell/policy-tree.ts'
-import type { FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
+import type { Battalion, FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
 const statusEl = document.querySelector<HTMLDivElement>('#status')!
@@ -248,15 +246,6 @@ function renderMap(): void {
     owners[id] = tile.owner
   }
   const highlightTileId = selectedTileId
-  const neighborSourceId =
-    selectedBattalionId
-      ? findBattalionById(save, selectedBattalionId)?.tileId
-      : selectedTileId
-  const neighborIds = neighborSourceId
-    ? map.tileById[neighborSourceId]
-      ? getNeighborTiles(map.tileById[neighborSourceId]).map((t) => t.id)
-      : []
-    : undefined
 
   const armyDisplay = buildArmyDisplay(save)
   battleAnimator.syncTargets(armyDisplay)
@@ -277,7 +266,6 @@ function renderMap(): void {
     save,
     owners,
     highlightId: highlightTileId,
-    neighborIds,
     armyDisplay: useCounters ? armyDisplay : undefined,
     militaryOptions: {
       troopOverrides,
@@ -937,54 +925,46 @@ async function bootstrap(): Promise<void> {
   logger.log('system', `就绪 v${LOCAL_VERSION.version} · v0.9`)
 }
 
-function tryMoveArmy(fromTileId: string, toTileId: string): boolean {
+function tryMoveArmy(battalion: Battalion, toTileId: string): boolean {
   if (!save || !map || gameEnded || mapLayer !== 'military') return false
   const pf = playerFaction()
-  const fromTile = map.tileById[fromTileId]
-  if (!fromTile || !fromTile.neighbors.includes(toTileId)) {
-    logger.log('system', '只能移动到邻接格')
+  if (battalion.faction !== pf) {
+    logger.log('system', '只能移动己方军队')
     return false
   }
 
-  const battalion = findBattalionOnTile(save, fromTileId)
-  if (!battalion || battalion.faction !== pf) {
-    logger.log('system', '该地块无可用己方驻军')
-    return false
-  }
-  if (battalion.inCombat || getMarchHoursLeft(battalion)) {
-    logger.log('system', '军队行军中或战斗中')
+  const fromTile = map.tileById[battalion.tileId]
+  const result = orderMarchToTile(save, map, battalion, toTileId)
+  if (!result.ok) {
+    logger.log('system', result.message)
     return false
   }
 
-  if (orderMarch(save, battalion, toTileId, MARCH_HOURS)) {
-    const dest = map.tileById[toTileId]?.name ?? toTileId
-    const hours = getMarchHoursLeft(battalion)!
-    const msg = `${getFactionLabel(pf)} ${battalion.designation}队 ${fromTile.name} → ${dest}（${formatHoursBrief(hours)}）`
-    logger.log('battle', msg)
-    pushRecentEvent(msg)
-    alerts.show(`军队前往 ${dest}，${formatHoursBrief(hours)}后抵达`, 'info', 4000)
-    updatePanel()
-    renderMap()
-    return true
-  }
-  return false
+  const dest = map.tileById[toTileId]?.name ?? toTileId
+  const hours = getMarchHoursLeft(battalion)!
+  const pathLen = battalion.marchRoute?.length ?? 0
+  const legs = Math.max(1, pathLen - 1)
+  const msg = `${getFactionLabel(pf)} ${battalion.designation}队 ${fromTile?.name ?? battalion.tileId} → ${dest}（${legs}段 · 下段${formatHoursBrief(hours)}）`
+  logger.log('battle', msg)
+  pushRecentEvent(msg)
+  alerts.show(`军队沿路径前往 ${dest}，${formatHoursBrief(hours)}后抵达下一段`, 'info', 4000)
+  updatePanel()
+  renderMap()
+  return true
 }
 
 function onMapCommand(clientX: number, clientY: number): void {
   if (!map || !save || mapLayer !== 'military') return
   const battalion = resolveSelectedPlayerBattalion()
-  if (!battalion) return
+  if (!battalion) {
+    alerts.show('请先在地图上选中己方军棋', 'warn', 2500)
+    return
+  }
 
   const tile = hitTestTile(canvas, map, clientX, clientY)
-  if (!tile) return
+  if (!tile || tile.id === battalion.tileId) return
 
-  const fromTileId = battalion.tileId
-  if (
-    fromTileId !== tile.id &&
-    map.tileById[fromTileId]?.neighbors.includes(tile.id)
-  ) {
-    tryMoveArmy(fromTileId, tile.id)
-  }
+  tryMoveArmy(battalion, tile.id)
 }
 
 function onMapTap(clientX: number, clientY: number): void {

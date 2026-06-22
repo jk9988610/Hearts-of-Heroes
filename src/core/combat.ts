@@ -79,6 +79,8 @@ export function clearBattalionMarch(battalion: Battalion): void {
   battalion.targetTileId = undefined
   battalion.marchHoursLeft = undefined
   battalion.marchDaysLeft = undefined
+  battalion.marchPath = undefined
+  battalion.marchRoute = undefined
 }
 
 export function clearBattalionCombat(battalion: Battalion): void {
@@ -153,9 +155,13 @@ export function finishMarch(
   _terrain: TerrainType,
 ): { type: 'moved' | 'combat' | 'merge'; defender?: Battalion } {
   const defender = findBattalionOnTile(save, targetTileId)
-  clearBattalionMarch(battalion)
+  battalion.targetTileId = undefined
+  battalion.marchHoursLeft = undefined
+  battalion.marchDaysLeft = undefined
 
   if (defender && defender.faction !== battalion.faction) {
+    battalion.marchPath = undefined
+    battalion.marchRoute = undefined
     syncBattalionTile(save, battalion, targetTileId)
     startCombat(battalion, defender)
     return { type: 'combat', defender }

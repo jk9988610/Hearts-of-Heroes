@@ -24,9 +24,16 @@ export interface MarchArrow {
   label: string
 }
 
+export interface RouteSegment {
+  fromTileId: string
+  toTileId: string
+}
+
 export interface ArmyDisplayState {
   overlays: Record<string, ArmyOverlay>
   arrows: MarchArrow[]
+  /** 规划路径线段（绿色） */
+  routes: RouteSegment[]
 }
 
 const FACTION_MARKER: Record<FactionId, string> = {
@@ -43,8 +50,21 @@ export function getFactionMarkerColor(faction: FactionId): string {
 export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
   const overlays: Record<string, ArmyOverlay> = {}
   const arrows: MarchArrow[] = []
+  const routes: RouteSegment[] = []
+  const routeKeys = new Set<string>()
 
   for (const battalion of listAllBattalions(save)) {
+    if (battalion.marchRoute && battalion.marchRoute.length >= 2) {
+      for (let i = 0; i < battalion.marchRoute.length - 1; i++) {
+        const fromTileId = battalion.marchRoute[i]!
+        const toTileId = battalion.marchRoute[i + 1]!
+        const key = `${fromTileId}|${toTileId}`
+        if (routeKeys.has(key)) continue
+        routeKeys.add(key)
+        routes.push({ fromTileId, toTileId })
+      }
+    }
+
     const troops = countBattalionTroops(battalion)
     const marchH = getMarchHoursLeft(battalion)
     const combatH = getCombatHoursLeft(battalion)
@@ -97,7 +117,7 @@ export function buildArmyDisplay(save: GameSave): ArmyDisplayState {
     }
   }
 
-  return { overlays, arrows }
+  return { overlays, arrows, routes }
 }
 
 export function getArmyForUi(save: GameSave, tileId: string): Battalion | null {

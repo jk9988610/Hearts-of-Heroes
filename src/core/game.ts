@@ -10,6 +10,7 @@ import {
 } from './combat.ts'
 import { countBattalionTroops } from './organization/helpers.ts'
 import { processEconomyHour, processStarvationDissolution } from './economy.ts'
+import { tryContinueMarchRoute } from './march-path.ts'
 import { isBattalionEventVisible, isFactionInView } from './visibility.ts'
 import type { GameClock } from './time-scale.ts'
 import { AI_LITE_INTERVAL_HOURS } from './time-scale.ts'
@@ -83,6 +84,9 @@ function processMarching(
       const target = battalion.targetTileId
       const terrain = map.tileById[target]?.type ?? 'plain'
       const result = finishMarch(save, battalion, target, terrain)
+      if (result.type === 'moved' || result.type === 'merge') {
+        tryContinueMarchRoute(save, battalion)
+      }
       const tileName = map.tileById[target]?.name ?? target
       const emit = isBattalionEventVisible(battalion, ctx.visibleTileIds, ctx.playerFaction)
 

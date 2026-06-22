@@ -143,6 +143,40 @@ function cellCenter(
   }
 }
 
+function drawMarchRoutes(
+  ctx: CanvasRenderingContext2D,
+  map: GeneratedMap,
+  layout: ReturnType<typeof getMapLayout>,
+  routes: { fromTileId: string; toTileId: string }[],
+): void {
+  ctx.strokeStyle = '#2d7a4f'
+  ctx.fillStyle = '#2d7a4f'
+  ctx.lineWidth = 3
+  ctx.setLineDash([])
+
+  for (const seg of routes) {
+    const from = map.tileById[seg.fromTileId]
+    const to = map.tileById[seg.toTileId]
+    if (!from || !to) continue
+
+    const a = cellCenter(from, layout)
+    const b = cellCenter(to, layout)
+    ctx.beginPath()
+    ctx.moveTo(a.x, a.y)
+    ctx.lineTo(b.x, b.y)
+    ctx.stroke()
+
+    const angle = Math.atan2(b.y - a.y, b.x - a.x)
+    const head = 7
+    ctx.beginPath()
+    ctx.moveTo(b.x, b.y)
+    ctx.lineTo(b.x - head * Math.cos(angle - 0.35), b.y - head * Math.sin(angle - 0.35))
+    ctx.lineTo(b.x - head * Math.cos(angle + 0.35), b.y - head * Math.sin(angle + 0.35))
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
 function drawMarchArrows(
   ctx: CanvasRenderingContext2D,
   map: GeneratedMap,
@@ -257,6 +291,10 @@ export function drawMapPreview(
       else ctx.fillStyle = `rgba(180, 140, 40, ${alpha})`
       ctx.fillRect(px, py, cell, cell)
     }
+  }
+
+  if (armyDisplay?.routes.length) {
+    drawMarchRoutes(ctx, map, layout, armyDisplay.routes)
   }
 
   if (armyDisplay?.arrows.length) {

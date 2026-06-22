@@ -52,6 +52,10 @@ export interface Battalion {
   centuries: Century[]
   tileId: string
   targetTileId?: string
+  /** 剩余路径节点（不含当前格与当前行军目标） */
+  marchPath?: string[]
+  /** 完整规划路径，用于地图画线 */
+  marchRoute?: string[]
   marchHoursLeft?: number
   inCombat?: boolean
   combatHoursLeft?: number

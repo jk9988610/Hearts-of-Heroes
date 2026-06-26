@@ -82,6 +82,7 @@ import { renderPolicyTree } from './ui/shell/policy-tree.ts'
 import { DiplomacyModal } from './ui/diplomacy-modal.ts'
 import { NationPanel } from './ui/nation-panel.ts'
 import { bindActionBar } from './ui/action-bar.ts'
+import { renderEncyclopedia } from './ui/shell/encyclopedia.ts'
 import type { Battalion, AdvisorConfig, FactionId, GameSave, GeneratedMap, HeroConfig, MapTile, PolicyConfig } from './types/index.ts'
 
 const logEl = document.querySelector<HTMLDivElement>('#log')!
@@ -514,6 +515,7 @@ function bindShell(): void {
     { id: 'action-construction', title: '建设', element: document.querySelector('#modal-action-construction')! },
     { id: 'action-production', title: '生产', element: document.querySelector('#modal-action-production')! },
     { id: 'action-recruitment', title: '募兵', element: document.querySelector('#modal-action-recruitment')! },
+    { id: 'encyclopedia', title: '百科', element: document.querySelector('#modal-encyclopedia')! },
   ])
 
   diplomacyModal = new DiplomacyModal({
@@ -561,6 +563,10 @@ function bindShell(): void {
   })
   document.querySelector('#btn-modal-events')!.addEventListener('click', () => {
     modalHost?.toggle('events', '近期事件')
+  })
+  document.querySelector('#btn-modal-encyclopedia')!.addEventListener('click', () => {
+    renderEncyclopedia(document.querySelector('#encyclopedia-content')!)
+    modalHost?.toggle('encyclopedia', '百科')
   })
 
   bindDebugToolbar(logger, {

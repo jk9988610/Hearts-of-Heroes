@@ -173,6 +173,45 @@
 
       .action-panel-hint { font-size: 0.85rem; color: #5c4f3a; margin: 0.5rem 0; }
       .action-placeholder { font-size: 0.85rem; color: #5c4f3a; padding: 0.5rem 0; }
+
+      #encyclopedia-content {
+        max-height: min(62vh, 520px);
+        overflow-y: auto;
+        padding-right: 0.25rem;
+        font-size: 0.85rem;
+        line-height: 1.55;
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      .encyclopedia-intro {
+        margin: 0 0 0.85rem;
+        padding: 0.5rem 0.65rem;
+        background: #e8dcc8;
+        border-left: 3px solid #8b7355;
+        color: #4a3f2e;
+      }
+      .encyclopedia-section { margin-bottom: 1rem; }
+      .encyclopedia-section h3 {
+        margin: 0 0 0.35rem;
+        font-size: 0.95rem;
+        color: #6b2a2a;
+        border-bottom: 1px solid #c9b896;
+        padding-bottom: 0.2rem;
+      }
+      .encyclopedia-section h4 {
+        margin: 0.55rem 0 0.2rem;
+        font-size: 0.88rem;
+        color: #4a3f2e;
+      }
+      .encyclopedia-section p {
+        margin: 0.3rem 0;
+        color: #3a3228;
+      }
+      .encyclopedia-section ul {
+        margin: 0.25rem 0 0.35rem 1.15rem;
+        padding: 0;
+      }
+      .encyclopedia-section li { margin: 0.2rem 0; }
       #counter-layer {
         position: absolute;
         left: 0;
@@ -749,6 +788,7 @@
           <span class="top-sep"></span>
           <button id="btn-modal-debug" type="button">调试</button>
           <button id="btn-modal-events" type="button">日志</button>
+          <button id="btn-modal-encyclopedia" type="button">百科</button>
         </div>
       </header>
 
@@ -875,6 +915,9 @@
             </div>
             <div id="modal-events" class="modal-panel" data-modal-title="近期事件" hidden>
               <div id="events-panel">暂无</div>
+            </div>
+            <div id="modal-encyclopedia" class="modal-panel" data-modal-title="百科" hidden>
+              <div id="encyclopedia-content"></div>
             </div>
           </div>
         </div>
